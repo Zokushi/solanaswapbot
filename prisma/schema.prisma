@@ -1,0 +1,82 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Transaction {
+  id             BigInt     @id @default(autoincrement())
+  botId          BigInt
+  tokenIn        String
+  tokenInAmount  Float   
+  tokenOut       String
+  tokenOutAmount Float   
+  tokenInUSD     Float   
+  tokenOutUSD    Float   
+  totalValueUSD  Float   
+  txid           String
+  date           DateTime @default(now())
+}
+
+model Config {
+  botId                 BigInt     @id @default(autoincrement())
+  initialInputToken     String
+  initialOutputToken    String 
+  initialInputAmount    Float   
+  firstTradePrice       Float   
+  targetGainPercentage  Float
+  stopLossPercentage    BigInt?
+  status               String    @default("inactive")
+}
+
+model MultiConfig {
+  botId                 BigInt            @id @default(autoincrement())
+  initialInputToken     String
+  initialInputAmount    Float
+  targetGainPercentage  Float
+  stopLossPercentage    BigInt?
+  targetAmounts         TargetAmount[] @relation("ConfigTargetAmounts")
+  checkInterval         Int?
+  status               String    @default("inactive")
+}
+
+model TargetAmount {
+  id                    BigInt      @id @default(autoincrement())
+  configId              BigInt
+  tokenAddress           String
+  amount                Float
+  config                MultiConfig   @relation("ConfigTargetAmounts", fields: [configId], references: [botId], onDelete: Cascade)
+}
+
+model Token {
+  id            BigInt     @id @default(autoincrement())
+  address       String     @unique
+  name          String
+  symbol        String
+  decimals      Int
+  logoURI       String?
+  updatedAt     DateTime   @updatedAt
+
+  // Relation field: One Token can have many tags
+  tags          Tags[]     @relation("TokenTags")
+}
+
+model Tags {
+  id          BigInt     @id @default(autoincrement())
+  verified    String
+  unverified  String
+  lst         String
+  strict      String
+  community   String
+  pump        String
+  clone       String
+
+  // Relation field: Tags can be related to multiple tokens
+  token       Token[] @relation("TokenTags")
+}
+

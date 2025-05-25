@@ -50,12 +50,9 @@ cd <repository-name>
 
 2. Install dependencies:
 ```bash
-npm install
-```
-
-3. Build the project:
-```bash
-npm run build
+yarn install
+npx prisma migrate dev
+npx prisma generate
 ```
 
 ## Usage
@@ -64,7 +61,7 @@ npm run build
 
 1. Start the server:
 ```bash
-npm start
+yarn dev:windows
 ```
 
 2. The CLI interface will be displayed, allowing you to:
