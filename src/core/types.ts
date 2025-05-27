@@ -1,5 +1,11 @@
 import { RoutePlanStep} from "@jup-ag/api";
 import { Address, Rpc, createSolanaRpcSubscriptions, SolanaRpcApiMainnet } from "@solana/kit";
+import { DefaultBotManager } from "./botManager.js";
+import { Socket } from "socket.io-client";
+import { MultiConfig, TargetAmount } from "@prisma/client";
+import { Config } from "jest";
+import { TradeBot } from "./bot.js";
+import MultiBot from "./multibot.js";
 
 // Utility type for BigInt values that can be safely converted to/from numbers
 export type SafeBigInt = bigint;
@@ -43,7 +49,7 @@ export const BigIntUtils = {
 };
 
 export interface NewConfig {
-  botId: SafeBigInt | number;
+  botId: string;
   inputToken: string;
   outputToken: string;
   inputAmount: number;
@@ -53,7 +59,7 @@ export interface NewConfig {
 }
 
 export interface BotData {
-  botId: SafeBigInt;
+  botId: string;
   status: string;
   balance?: number;
   inputMint: string;
@@ -77,7 +83,7 @@ export interface TokenAccountInfo {
 }
 
 export interface LogSwapArgs {
-  botId: SafeBigInt;
+  botId: string;
   tokenIn: string;
   tokenInAmount: number;
   tokenOut: string;
@@ -95,7 +101,7 @@ export interface EmailArgs {
 }
 
 export interface TradeBotConfig {
-  botId: bigint;
+  botId: string;
   wallet: CryptoKeyPair;
   rpc: Rpc<SolanaRpcApiMainnet>;
   subscriptions?: ReturnType<typeof createSolanaRpcSubscriptions>;
@@ -109,7 +115,7 @@ export interface TradeBotConfig {
 }
 
 export interface MultiBotConfig {
-  botId: bigint;
+  botId: string;
   wallet: CryptoKeyPair;
   rpc: Rpc<SolanaRpcApiMainnet>;
   subscriptions: ReturnType<typeof createSolanaRpcSubscriptions>;
@@ -118,7 +124,7 @@ export interface MultiBotConfig {
   initialBalance?: number;
   targetAmounts?: Record<string, number>;
   targetGainPercentage?: number;
-  stopLossPercentage?: PercentageBigInt;
+  stopLossPercentage?: number;
   checkInterval?: number;
 }
 
@@ -233,3 +239,109 @@ export type TokenInfo = {
   decimals: number;
   logoURI: string;
 }
+
+export interface BotResponse {
+  botId: string;
+  status: string;
+}
+
+export interface MultiBotResponse {
+  botId: string;
+  status: string;
+  targetAmounts: targetAmounts[];
+}
+
+export type BotStatus = "Running" | "Stopped" | "active" | "inactive";
+
+export interface Bot {
+  botId: string;
+  status: BotStatus;
+  amount: number;
+  initialInputToken: string;
+  initialOutputToken?: string;
+}
+
+export interface BotWithType extends Bot {
+  type: 'regular' | 'multi';
+  firstTradePrice?: bigint;
+  targetGainPercentage?: bigint;
+  stopLossPercentage?: bigint;
+  checkInterval?: number;
+  targetAmounts?: Array<{
+    tokenAddress: string;
+    amount: number;
+  }>;
+}
+
+export interface ConfigListState {
+  regularBots: Array<{
+    botId: string;
+    initialInputToken: string;
+    initialOutputToken: string;
+    initialInputAmount: number;
+    firstTradePrice: number;
+    targetGainPercentage: number;
+    stopLossPercentage?: number;
+    status: BotStatus;
+  }>;
+  multiBots: Array<{
+    botId: string;
+    initialInputToken: string;
+    initialInputAmount: number;
+    targetGainPercentage: number;
+    stopLossPercentage?: number;
+    checkInterval?: number;
+    status: BotStatus;
+    targetAmounts: Array<{
+      id: number;
+      configId: string;
+      tokenAddress: string;
+      amount: number;
+    }>;
+  }>;
+}
+
+export interface BotInitializer {
+  initializeBot(config: Partial<TradeBotConfig>, socket: Socket): Promise<TradeBot>;
+  initializeMultiBot(config: Partial<MultiBotConfig>, socket: Socket): Promise<MultiBot>;
+}
+
+export interface BotManager {
+  activeBots: Map<string, TradeBot>;
+  activeMultiBots: Map<string, MultiBot>;
+  startBot(config: Partial<TradeBotConfig>, socket: Socket): Promise<void>;
+  startMultiBot(config: Partial<MultiBotConfig>, socket: Socket): Promise<void>;
+  stopBot(botId: string): Promise<void>;
+  getBotStatus(botId: string): Promise<any>;
+  getAllBots(): Promise<{
+    regularBots: Array<Config & { status: string }>;
+    multiBots: Array<MultiConfig & { status: string; targetAmounts: TargetAmount[] }>;
+  }>;
+  deleteConfig(botId: string, type: 'regular' | 'multi'): Promise<void>;
+  updateBotConfig(botId: string, config: Partial<TradeBotConfig>): Promise<void>;
+  updateMultiBotConfig(botId: string, config: Partial<MultiBotConfig>): Promise<void>;
+}
+
+export type SortField = 'type' | 'amount' | 'status';
+export type SortDirection = 'asc' | 'desc';
+export type FilterType = 'all' | 'active' | 'inactive';
+
+export interface ConfigListProps {
+  onBack: () => void;
+  botManager: DefaultBotManager;
+  socket: Socket;
+}
+
+export interface RegularBotFormProps {
+  onComplete: () => void;
+  botManager: DefaultBotManager;
+  socket: Socket;
+  editingConfig?: BotWithType | null;
+}
+
+export interface MultiBotFormProps {
+  onComplete: () => void;
+  botManager: DefaultBotManager;
+  socket: Socket;
+  editingConfig?: BotWithType | null;
+} 

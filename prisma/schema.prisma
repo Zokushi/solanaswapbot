@@ -10,8 +10,8 @@ datasource db {
 }
 
 model Transaction {
-  id             BigInt     @id @default(autoincrement())
-  botId          BigInt
+  id             Int       @id @default(autoincrement())
+  botId          String    // Changed from BigInt to String for UUID
   tokenIn        String
   tokenInAmount  Float   
   tokenOut       String
@@ -20,54 +20,54 @@ model Transaction {
   tokenOutUSD    Float   
   totalValueUSD  Float   
   txid           String
-  date           DateTime @default(now())
+  date           DateTime  @default(now())
 }
 
 model Config {
-  botId                 BigInt     @id @default(autoincrement())
+  botId                 String    @id // Changed from BigInt to String for UUID
   initialInputToken     String
   initialOutputToken    String 
   initialInputAmount    Float   
   firstTradePrice       Float   
   targetGainPercentage  Float
-  stopLossPercentage    BigInt?
+  stopLossPercentage    Int?
   status               String    @default("inactive")
 }
 
 model MultiConfig {
-  botId                 BigInt            @id @default(autoincrement())
+  botId                 String            @id // Changed from BigInt to String for UUID
   initialInputToken     String
   initialInputAmount    Float
   targetGainPercentage  Float
-  stopLossPercentage    BigInt?
+  stopLossPercentage    Int?
   targetAmounts         TargetAmount[] @relation("ConfigTargetAmounts")
   checkInterval         Int?
   status               String    @default("inactive")
 }
 
 model TargetAmount {
-  id                    BigInt      @id @default(autoincrement())
-  configId              BigInt
-  tokenAddress           String
+  id                    Int         @id @default(autoincrement())
+  configId              String      // Changed from BigInt to String for UUID
+  tokenAddress          String
   amount                Float
   config                MultiConfig   @relation("ConfigTargetAmounts", fields: [configId], references: [botId], onDelete: Cascade)
 }
 
 model Token {
-  id            BigInt     @id @default(autoincrement())
-  address       String     @unique
+  id            Int       @id @default(autoincrement())
+  address       String    @unique
   name          String
   symbol        String
   decimals      Int
   logoURI       String?
-  updatedAt     DateTime   @updatedAt
+  updatedAt     DateTime  @updatedAt
 
   // Relation field: One Token can have many tags
-  tags          Tags[]     @relation("TokenTags")
+  tags          Tags[]    @relation("TokenTags")
 }
 
 model Tags {
-  id          BigInt     @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   verified    String
   unverified  String
   lst         String

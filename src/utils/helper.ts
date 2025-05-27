@@ -251,26 +251,7 @@ export async function getTokenList(): Promise<{ name: string; address: string; s
   }
 }
 
-export async function tokenAutocomplete(_: any, input: string = ''): Promise<{ name: string; value: string }[]> {
-  const tokens = await getTokenList();
-  if (tokens.length === 0) {
-    return [{ name: 'No tokens available in database', value: '', disabled: true } as any];
-  }
-  const lowerInput = input.toLowerCase();
-  const filteredTokens = tokens.filter(token => {
-    const matches =
-      token.name?.toLowerCase().includes(lowerInput) ||
-      token.symbol?.toLowerCase().includes(lowerInput) ||
-      token.address?.toLowerCase().includes(lowerInput);
-    return matches;
-  });
-  return filteredTokens
-    .filter(token => typeof token.symbol === 'string' && token.symbol.trim() !== '')
-    .map(token => ({
-      name: `${token.symbol} - ${token.name} (${token.address.slice(0, 6)}...${token.address.slice(-4)})`,
-      value: token.name,
-    }));
-}
+
 export async function getTokenAddressByName(name: string): Promise<string> {
   try {
     if (!name || typeof name !== 'string') {
@@ -296,4 +277,9 @@ export async function getTokenAddressByName(name: string): Promise<string> {
     logger.error(`getTokenAddressByName error: ${error instanceof Error ? error.message : String(error)}`);
     throw error;
   }
+}
+
+export function shortenUUID(uuid: string): string {
+  // Take first 8 characters and last 4 characters
+  return `${uuid.slice(0, 8)}`;
 }

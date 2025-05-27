@@ -1,44 +1,25 @@
 import { Socket } from "socket.io-client";
 import { TradeBot } from "./bot.js";
 import { MultiBot } from "./multibot.js";
-import { TradeBotConfig, MultiBotConfig } from "./types.js";
-import { BotManager, BotInitializer } from "./interfaces.js";
+import { TradeBotConfig, MultiBotConfig, BotResponse, BotManager } from "./types.js";
 import { createRpcClients } from "../services/rpcFactory.js";
-import { getTokenDecimalsByName, getTokenAddressByName, getTokenName } from "../utils/helper.js";
+import { getTokenDecimalsByName, getTokenAddressByName } from "../utils/helper.js";
 import { ENV } from "../config/index.js";
 import logger from "../utils/logger.js";
 import bs58 from "bs58";
 import { createKeyPairFromBytes, Address } from "@solana/kit";
-import { addConfig, addMultiConfig } from "../services/configService.js";
-import { getAllConfigs } from "../services/configService.js";
 import { Config, MultiConfig, TargetAmount } from "@prisma/client";
 import { ConfigService } from "../services/configService.js";
 
 export class DefaultBotManager implements BotManager {
-  public activeBots: Map<bigint, TradeBot> = new Map();
-  public activeMultiBots: Map<bigint, MultiBot> = new Map();
-  private nextBotId: bigint = 1n;
+  public activeBots: Map<string, TradeBot> = new Map();
+  public activeMultiBots: Map<string, MultiBot> = new Map();
   private configService: ConfigService;
 
   constructor() {
     this.configService = new ConfigService();
   }
 
-  private generateBotId(): number {
-    const usedIds = new Set([
-      ...Array.from(this.activeBots.keys()),
-      ...Array.from(this.activeMultiBots.keys())
-    ]);
-    
-    while (usedIds.has(this.nextBotId)) {
-      this.nextBotId++;
-    }
-    
-    // Convert bigint to number before returning, to fix type error
-    const botId = Number(this.nextBotId);
-    this.nextBotId++;
-    return botId;
-  }
 
   private async initializeBot(config: Partial<TradeBotConfig>, socket: Socket): Promise<TradeBot> {
     const solanaEndpoint: string = ENV.solanaEndpoint!;
@@ -52,15 +33,12 @@ export class DefaultBotManager implements BotManager {
     const decodedKey = new Uint8Array(bs58.decode(wallet));
     const keypair = await createKeyPairFromBytes(decodedKey);
 
-    // Convert botId to bigint if it's a string
-    const botId = typeof config.botId === 'string' ? BigInt(config.botId) : config.botId;
-
     if (
       typeof config.initialInputToken !== 'string' ||
       typeof config.initialOutputToken !== 'string' ||
       typeof config.initialInputAmount !== 'number' ||
       typeof config.firstTradePrice !== 'number' ||
-      !botId
+      !config.botId
     ) {
       throw new Error('Missing or invalid required config fields');
     }
@@ -73,7 +51,7 @@ export class DefaultBotManager implements BotManager {
     const firstTradePrice = Number(config.firstTradePrice) * 10 ** outputToken.decimals;
 
     const botConfig: TradeBotConfig = {
-      botId,
+      botId: config.botId,
       wallet: keypair,
       firstTradePrice,
       rpc,
@@ -86,7 +64,7 @@ export class DefaultBotManager implements BotManager {
     };
 
     const bot = new TradeBot(botConfig, socket);
-    this.activeBots.set(botId, bot);
+    this.activeBots.set(botConfig.botId, bot);
     return bot;
   }
 
@@ -96,21 +74,20 @@ export class DefaultBotManager implements BotManager {
     const wssEndpoint: string = ENV.wss!;
     if (!solanaEndpoint || !wallet || !wssEndpoint) {
       logger.error('Required environment variables are not set');
+      throw new Error('Required environment variables are not set');
     }
 
     const { rpc, subscriptions } = await createRpcClients({ solanaEndpoint, wssEndpoint });
     const decodedKey = new Uint8Array(bs58.decode(wallet));
     const keypair = await createKeyPairFromBytes(decodedKey);
 
-    // Convert botId to bigint if it's a string
-    const botId = typeof config.botId === 'string' ? BigInt(config.botId) : config.botId;
-
     if (
       typeof config.initialInputToken !== 'string' ||
       typeof config.initialInputAmount !== 'number' ||
-      !botId ||
+      !config.botId ||
       typeof config.targetGainPercentage !== 'number'
     ) {
+      logger.error('Missing or invalid required config fields');
       throw new Error('Missing or invalid required config fields');
     }
 
@@ -143,7 +120,7 @@ export class DefaultBotManager implements BotManager {
       initialBalance: number;
       targetGainPercentage: number;
     } = {
-      botId,
+      botId: config.botId,
       wallet: keypair,
       rpc,
       subscriptions,
@@ -157,7 +134,7 @@ export class DefaultBotManager implements BotManager {
     };
 
     const bot = new MultiBot(botConfig, socket);
-    this.activeMultiBots.set(botId, bot);
+    this.activeMultiBots.set(botConfig.botId, bot);
     return bot;
   }
 
@@ -166,10 +143,8 @@ export class DefaultBotManager implements BotManager {
       if (!config.botId) {
         throw new Error('botId is required');
       }
-      // Convert string to bigint if needed
-      const botId = typeof config.botId === 'string' ? BigInt(config.botId) : config.botId;
-      const bot = await this.initializeBot({ ...config, botId }, socket);
-      await this.configService.updateBotStatus(botId, 'active');
+      const bot = await this.initializeBot({ ...config, botId: config.botId }, socket);
+      await this.configService.updateBotStatus(config.botId, 'active');
     } catch (error) {
       console.error('Failed to start bot:', error);
       throw error;
@@ -181,17 +156,15 @@ export class DefaultBotManager implements BotManager {
       if (!config.botId) {
         throw new Error('botId is required');
       }
-      // Convert string to bigint if needed
-      const botId = typeof config.botId === 'string' ? BigInt(config.botId) : config.botId;
-      const bot = await this.initializeMultiBot({ ...config, botId }, socket);
-      await this.configService.updateBotStatus(botId, 'active');
+      const bot = await this.initializeMultiBot({ ...config, botId: config.botId }, socket);
+      await this.configService.updateBotStatus(config.botId, 'active');
     } catch (error) {
       console.error('Failed to start multi bot:', error);
       throw error;
     }
   }
 
-  public async stopBot(botId: bigint): Promise<void> {
+  public async stopBot(botId: string): Promise<void> {
     const bot = this.activeBots.get(botId);
     if (bot) {
       bot.terminateSession();
@@ -231,7 +204,7 @@ export class DefaultBotManager implements BotManager {
     return data;
   }
 
-  public async getBotStatus(botId: bigint): Promise<any> {
+  public async getBotStatus(botId: string): Promise<BotResponse> {
     const bot = this.activeBots.get(botId);
     if (bot) {
       return this.serializeForSocket({
@@ -255,12 +228,16 @@ export class DefaultBotManager implements BotManager {
       });
     }
 
-    return null;
+    // If bot is not found in either activeBots or activeMultiBots, return an empty object with botId and status 'inactive'
+    return this.serializeForSocket({
+      botId,
+      status: 'inactive'
+    });
   }
 
   public async getAllBots(): Promise<{
-    regularBots: Array<Config & { status: string }>;
-    multiBots: Array<MultiConfig & { status: string; targetAmounts: TargetAmount[] }>;
+    regularBots: (Partial<Config> & { botId: string; status: string })[];
+    multiBots: (MultiConfig & { botId: string; status: string; targetAmounts: TargetAmount[] })[];
   }> {
     const { regularBots, multiBots } = await this.configService.getAllConfigs();
     return this.serializeForSocket({
@@ -276,7 +253,7 @@ export class DefaultBotManager implements BotManager {
   }
 
   public async getConfigs() {
-    const { regularBots, multiBots } = await getAllConfigs();
+    const { regularBots, multiBots } = await this.configService.getAllConfigs();
     return this.serializeForSocket({
       regularBots: regularBots.map((bot: Config) => ({
         ...bot,
@@ -287,6 +264,52 @@ export class DefaultBotManager implements BotManager {
         status: this.activeMultiBots.has(bot.botId) ? 'active' : 'inactive'
       }))
     });
+  }
+
+  public async deleteConfig(botId: string, type: 'regular' | 'multi'): Promise<void> {
+    try {
+      if (type === 'regular') {
+        await this.configService.deleteConfig(botId);
+      } else {
+        await this.configService.deleteMultiConfig(botId);
+      }
+    } catch (error) {
+      logger.error(`Error deleting configuration: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('Failed to delete configuration');
+    }
+  }
+
+  public async updateBotConfig(botId: string, config: Partial<TradeBotConfig>): Promise<void> {
+    try {
+      // First stop the bot if it's running
+      await this.stopBot(botId);
+      // Update the configuration, ensuring stopLossPercentage is a number or null if present
+      const configToUpdate = { 
+        ...config, 
+        stopLossPercentage: config.stopLossPercentage !== undefined 
+          ? config.stopLossPercentage === null 
+            ? null 
+            : Number(config.stopLossPercentage) 
+          : config.stopLossPercentage 
+      };
+      await this.configService.updateBotConfig(botId, configToUpdate);
+    } catch (error) {
+      logger.error(`Error updating bot configuration: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('Failed to update configuration');
+    }
+  }
+
+  public async updateMultiBotConfig(botId: string, config: Partial<MultiBotConfig>): Promise<void> {
+    try {
+      // First stop the bot if it's running
+      await this.stopBot(botId);
+      
+      // Update the configuration
+      await this.configService.updateMultiBotConfig(botId, config);
+    } catch (error) {
+      logger.error(`Error updating multi-bot configuration: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('Failed to update multi-bot configuration');
+    }
   }
 } 
 

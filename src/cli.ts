@@ -1,4 +1,4 @@
-import cli from './cli/ink-cli.js';
+import cli from './cli/App.js';
 
 // Run the CLI
 cli(); 

@@ -1,8 +1,8 @@
 // src/services/notificationService.ts
 import nodemailer from 'nodemailer';
-import { BotData, EmailArgs, LogSwapArgs } from '../core/types.js';
+import { BotData, LogSwapArgs } from '../core/types.js';
 import dotenv from 'dotenv';
-import { formatPercentage, formatPrice, getTokenName } from '../utils/helper.js';
+import { formatPrice, getTokenName } from '../utils/helper.js';
 import prisma from '../utils/prismaClient.js';
 import logger from '../utils/logger.js';
 import fetch from 'node-fetch';
@@ -14,7 +14,7 @@ dotenv.config({ path: '.env' });
 export class NotificationService {
   constructor() { }
 
-  public log(message: string, botId: number) {
+  public log(message: string, botId: string) {
     logger.info(`[Bot ${botId}] ${message}`);
   }
 

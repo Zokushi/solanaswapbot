@@ -24,6 +24,7 @@ out/
 *.sqlite
 *.sqlite3
 prisma/dev.db
+prisma/migrations
 prisma/*.db
 
 # IDE and editor files

@@ -1,4 +1,4 @@
-import { QuoteResponse, TradeBotConfig, NextTrade, BotData } from "./types.js";
+import { QuoteResponse, TradeBotConfig, NextTrade, BotData, BotStatus } from "./types.js";
 import logger from "../utils/logger.js";
 import {
   address,
@@ -16,8 +16,8 @@ import { ConfigService } from "../services/configService.js";
 
 export class TradeBot {
   // Public properties
-  public readonly botId: bigint;
-  public status: BotStatus;
+  public readonly botId: string;
+  public status: BotStatus = 'inactive';
   public difference: number;
   public ratio: number;
   public currentTrade: number;
@@ -42,6 +42,7 @@ export class TradeBot {
   private stopped: boolean;
   private waitingForConfirmation: boolean = false;
   public configService: ConfigService;
+  private monitorInterval?: NodeJS.Timeout;
 
   constructor(config: TradeBotConfig, socket: Socket) {
     if (!config.rpc) {
@@ -51,7 +52,7 @@ export class TradeBot {
       throw new Error('Subscriptions client is required');
     }
 
-    this.botId = config.botId;
+    this.botId = config.botId.toString();
     this.wallet = config.wallet;
     this.rpc = config.rpc;
     this.subscriptions = config.subscriptions;
@@ -59,7 +60,6 @@ export class TradeBot {
     this.difference = 0;
     this.ratio = 0;
     this.currentTrade = 0;
-    this.status = "Running";
     this.targetGainPercentage = config.targetGainPercentage || undefined;
     this.inputTokenAccount = config.initialInputToken as Address;
     this.outputTokenAccount = config.initialOutputToken as Address;
@@ -88,7 +88,7 @@ export class TradeBot {
     this.notificationService = new NotificationService();
     this.configService = new ConfigService();
     this.initialize().catch((error) => {
-      this.socket.emit("log", { botId: this.botId.toString(), message: `Bot ID: FAILED TO START ${this.botId} Error: ${error}` });
+      logger.error(`Bot ID: ${this.botId} - Error starting bot: ${error instanceof Error ? error.message : String(error)}`);
     });
   }
 
@@ -98,15 +98,15 @@ export class TradeBot {
    * @throws {Error} If public key fetching or balance refresh fails after retries.
    */
   private async initialize(): Promise<void> {
-    this.notificationService.log(`Bot ID: ${this.botId.toString()} 🤖 Initiating trade bot`, Number(this.botId));
+    this.notificationService.log(`Bot ID: ${this.botId} 🤖 Initiating trade bot`, this.botId);
 
     const pubWallet = await getAddressFromPublicKey(this.wallet.publicKey);
     if (!pubWallet) {
-      logger.error(`Bot ID: ${this.botId.toString()} - Error fetching public key.`);
+      logger.error(`Bot ID: ${this.botId} - Error fetching public key.`);
       throw new Error("Error fetching public key. Make sure keypair provided is set and valid.");
     }
     this.startPriceWatch();
-    this.emit("log", { botId: this.botId.toString(), message: `Bot ID: ${this.botId.toString()} started successfully` });
+    logger.info(`${this.botId} started successfully`);
   }
 
   /**
@@ -118,7 +118,7 @@ export class TradeBot {
       if (this.stopped || !this.priceWatchIntervalId) {
         clearInterval(this.priceWatchIntervalId);
         this.priceWatchIntervalId = undefined;
-        logger.debug(`Bot ID: ${this.botId.toString()} - Price watch stopped.`);
+        logger.info(`Bot ID: ${this.botId} - Price watch stopped.`);
         return;
       }
 
@@ -128,7 +128,7 @@ export class TradeBot {
       this.lastCheck = currentTime;
 
       if (this.waitingForConfirmation) {
-        this.notificationService.log(`Bot ID: ${this.botId.toString()} - Waiting for transaction confirmation...`, Number(this.botId));
+        logger.info(`Bot ID: ${this.botId} - Waiting for transaction confirmation...`);
         return;
       }
 
@@ -136,18 +136,17 @@ export class TradeBot {
         const timeout = setTimeout(() => {
           throw new Error("Quote fetch timed out");
         }, 10000);
-        logger.debug(`Bot ID: ${this.botId.toString()} - calling getQuote()`);
+        logger.debug(`Bot ID: ${this.botId} - calling getQuote()`);
         const quote = await this.tradeService.getQuote2(this.nextTrade);
         clearTimeout(timeout);
         if (quote) {
           await this.updateUI(quote);
-          logger.debug(`Bot ID: ${this.botId.toString()} - Evaluating quote`);
+          logger.debug(`Bot ID: ${this.botId} - Evaluating quote`);
           await this.tradeService.evaluateQuoteAndSwap(quote, this.firstTradePrice);
         }
       } catch (error) {
-        const errorMsg = `Bot ID: ${this.botId.toString()} - Error in price watch: ${error instanceof Error ? error.message : String(error)}`;
+        const errorMsg = `Bot ID: ${this.botId} - Error in price watch: ${error instanceof Error ? error.message : String(error)}`;
         logger.error(errorMsg);
-        this.socket.emit("log", { botId: this.botId.toString(), message: errorMsg });
       }
     }, this.checkInterval);
   }
@@ -158,7 +157,7 @@ export class TradeBot {
    * @public
    */
   public setWaitingForConfirmation(flag: boolean): void {
-    logger.debug(`Bot ID: ${this.botId.toString()} - setWaitingForConfirmation(${flag})`);
+    logger.debug(`Bot ID: ${this.botId} - setWaitingForConfirmation(${flag})`);
     this.waitingForConfirmation = flag;
   }
 
@@ -178,14 +177,14 @@ export class TradeBot {
       currentPrice
     );
     const currentThresholdPrice = await getTokenDecimalsByAddress(this.nextTrade.outputMint as Address, thresholdPrice);
-    logger.info(`Bot ID: ${this.botId.toString()} - updateUI() => Current Price=${currentPriceWithDecimals}, Threshold Price=${currentThresholdPrice}`);
+    logger.info(`Bot ID: ${this.botId} - updateUI() => Current Price=${currentPriceWithDecimals}, Threshold Price=${currentThresholdPrice}`);
 
     const diff = ((currentPriceWithDecimals - currentThresholdPrice) / currentThresholdPrice) * 100;
     this.difference = diff;
     this.currentTrade = currentPriceWithDecimals;
 
     if (this.stopLossPercentage && diff < -Number(this.stopLossPercentage)) {
-      this.notificationService.log(`Bot ID: ${this.botId.toString()} - Stop loss triggered at ${currentPriceWithDecimals}. Terminating.`, Number(this.botId));
+      this.notificationService.log(`Bot ID: ${this.botId} - Stop loss triggered at ${currentPriceWithDecimals}. Terminating.`, this.botId);
       this.terminateSession();
       return;
     }
@@ -219,14 +218,14 @@ export class TradeBot {
   private async updateNextTrade(lastTrade: QuoteResponse): Promise<void> {
     const inLamports = BigInt(lastTrade.inAmount);
     if (!this.targetGainPercentage || this.targetGainPercentage <= 0) {
-      throw new Error(`Bot ID: ${this.botId.toString()} - Invalid target gain percentage: ${this.targetGainPercentage}`);
+      throw new Error(`Bot ID: ${this.botId} - Invalid target gain percentage: ${this.targetGainPercentage}`);
     }
 
     const targetGainLamports = inLamports * BigInt(Math.floor(this.targetGainPercentage * 100)) / BigInt(10000);
     const currentGainLamports = BigInt(lastTrade.outAmount) - inLamports;
 
     if (currentGainLamports >= targetGainLamports) {
-      this.notificationService.log(`Bot ID: ${this.botId.toString()} - Target gain reached! Stopping bot.`, Number(this.botId));
+      this.notificationService.log(`Bot ID: ${this.botId} - Target gain reached! Stopping bot.`, this.botId);
       this.terminateSession();
       return;
     }
@@ -263,7 +262,7 @@ export class TradeBot {
         initialInputAmount: Number(getTokenA)!,
         firstTradePrice: Number(getTokenB)!,
         targetGainPercentage: this.targetGainPercentage,
-        stopLossPercentage: this.stopLossPercentage || BigInt(0),
+        stopLossPercentage: this.stopLossPercentage ? Number(this.stopLossPercentage) : null,
       });
     }
 
@@ -283,13 +282,10 @@ export class TradeBot {
     });
 
     this.tradeCounter += 1;
-    this.notificationService.log(`Bot ID: ${this.botId.toString()} - Trade completed: Swapped ${await getTokenName(inputMint)} for ${await getTokenName(outputMint)}`, Number(this.botId));
+    logger.info(`Bot ID: ${this.botId} - Trade completed: Swapped ${await getTokenName(inputMint)} for ${await getTokenName(outputMint)}`);
 
     if (!this.targetGainPercentage || this.targetGainPercentage === 0) {
-      this.socket.emit("log", {
-        botId: this.botId.toString(),
-        message: `Bot ID: ${this.botId.toString()} - No target gain percentage set. Stopping bot.`,
-      });
+      logger.info(`${this.botId} - No target gain percentage set. Stopping bot.`);
       this.terminateSession();
     }
   }
@@ -299,14 +295,14 @@ export class TradeBot {
    * @public
    */
   public terminateSession(): void {
-    this.notificationService.log(`Bot ID: ${this.botId.toString()} ❌ Terminating bot...`, Number(this.botId));
+    this.notificationService.log(`Bot ID: ${this.botId} ❌ Terminating bot...`, this.botId);
     this.stopped = true;
 
     if (this.priceWatchIntervalId) {
       clearInterval(this.priceWatchIntervalId);
       this.priceWatchIntervalId = undefined;
     }
-    this.notificationService.log(`Bot ID: ${this.botId.toString()} - Bot terminated successfully`, Number(this.botId));
+    this.notificationService.log(`Bot ID: ${this.botId} - Bot terminated successfully`, this.botId);
   }
 
   private serializeForSocket(data: any): any {
@@ -336,13 +332,91 @@ export class TradeBot {
   private emit(event: string, data: any) {
     this.socket.emit(event, this.serializeForSocket(data));
   }
+
+  async start(): Promise<void> {
+    if (this.status === 'Running') {
+      throw new Error('Bot is already running');
+    }
+
+    if (!this.inputTokenAccount || !this.nextTrade.amount) {
+      throw new Error('Missing required configuration: initialInputToken or initialInputAmount');
+    }
+
+    try {
+      this.status = 'Running';
+      this.socket.emit('botStatus', { botId: this.botId, status: this.status });
+      
+      this.monitorInterval = setInterval(async () => {
+        try {
+          await this.checkAndExecute();
+        } catch (error) {
+          logger.error(`Error in monitor interval: ${error}`);
+          this.socket.emit('error', { 
+            botId: this.botId, 
+            message: `Monitor error: ${error instanceof Error ? error.message : String(error)}` 
+          });
+        }
+      }, this.checkInterval || 60000);
+    } catch (error) {
+      this.status = 'Stopped';
+      this.socket.emit('botStatus', { botId: this.botId, status: this.status });
+      throw error;
+    }
+  }
+
+  async stop(): Promise<void> {
+    if (this.status !== 'Running') {
+      throw new Error('Bot is not running');
+    }
+
+    try {
+      if (this.monitorInterval) {
+        clearInterval(this.monitorInterval);
+        this.monitorInterval = undefined;
+      }
+      this.status = 'Stopped';
+      this.socket.emit('botStatus', { botId: this.botId, status: this.status });
+    } catch (error) {
+      this.status = 'Stopped';
+      this.socket.emit('botStatus', { botId: this.botId, status: this.status });
+      throw error;
+    }
+  }
+
+  private async checkAndExecute(): Promise<void> {
+    try {
+      const currentBalance = await this.getCurrentBalance();
+      const gainPercentage = ((currentBalance - this.firstTradePrice) / this.firstTradePrice) * 100;
+
+      if (this.targetGainPercentage && gainPercentage >= this.targetGainPercentage) {
+        await this.executeTrade();
+        await this.stop();
+      } else if (this.stopLossPercentage && gainPercentage <= -Number(this.stopLossPercentage)) {
+        logger.warn(`Stop loss triggered at ${gainPercentage}% loss`);
+        await this.stop();
+      }
+    } catch (error) {
+      logger.error(`Error in checkAndExecute: ${error}`);
+      this.socket.emit('error', { 
+        botId: this.botId, 
+        message: `Trade check error: ${error instanceof Error ? error.message : String(error)}` 
+      });
+      throw error;
+    }
+  }
+
+  private async getCurrentBalance(): Promise<number> {
+    // Implementation of getCurrentBalance
+    return 0;
+  }
+
+  private async executeTrade(): Promise<void> {
+    // Implementation of executeTrade
+  }
 }
 
-// Add type for bot status
-type BotStatus = "Running" | "Stopped";
-
 export interface NewConfig {
-  botId: bigint;
+  botId: string;
   // ...
   stopLossPercentage?: bigint; // undefined if not set
 }

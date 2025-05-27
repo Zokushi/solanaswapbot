@@ -30,7 +30,7 @@ export class TradeService {
   private readonly baseUrl: string = "https://lite-api.jup.ag/swap/v1";
 
   constructor(
-    private botId: bigint,
+    private botId: string,
     private readonly wallet: CryptoKeyPair,
     private readonly rpc: Rpc<SolanaRpcApiMainnet>,
     private readonly subscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>,
@@ -146,7 +146,7 @@ export class TradeService {
 
   public async ata(quoteRequest: QuoteResponse): Promise<string> {
     try {
-      const pubWallet = await getAddressFromPublicKey(this.wallet.publicKey);
+      const pubWallet = "8sZ5yWf1TPk86ehw7ekPMcrXr76YXgMnLwWe8ZLRjDqz"
       logger.warn(`🔍 [TradeService] Checking ATA for mint: ${quoteRequest.outputMint}`);
 
       const ata = await getAssociatedTokenAddress(

@@ -5,7 +5,7 @@ import logger from "../utils/logger.js";
 
 const UPDATE_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
-export async function fetchTokenList() {
+export async function fetchTokenList(forceUpdate: boolean = false) {
     try {
         // Check if we need to update the token list
         const lastUpdate = await prisma.token.findFirst({
@@ -14,7 +14,7 @@ export async function fetchTokenList() {
         });
 
         const now = new Date();
-        const shouldUpdate = !lastUpdate || 
+        const shouldUpdate = forceUpdate || !lastUpdate || 
             (now.getTime() - lastUpdate.updatedAt.getTime() > UPDATE_INTERVAL);
 
         if (!shouldUpdate) {
@@ -29,6 +29,7 @@ export async function fetchTokenList() {
 
         // If lstTaggedResponse is an array of tokens, update each one
         if (Array.isArray(lstTaggedResponse)) {
+            logger.info(`Found ${lstTaggedResponse.length} tokens to update`);
             for (const token of lstTaggedResponse) {
                 await updateTokenData(token as TokenInfo);
             }
@@ -46,26 +47,38 @@ export async function fetchTokenList() {
 
 export async function updateTokenData(tokenInfo: TokenInfo) {
     try {
-        const tokenData = await prisma.token.upsert({
-            where: { address: tokenInfo.address },
-            update: {
-                name: tokenInfo.name,
-                symbol: tokenInfo.symbol,
-                decimals: tokenInfo.decimals,
-                logoURI: tokenInfo.logoURI,
-                updatedAt: new Date()
-            },
-            create: {
-                address: tokenInfo.address,
-                name: tokenInfo.name,
-                symbol: tokenInfo.symbol,
-                decimals: tokenInfo.decimals,
-                logoURI: tokenInfo.logoURI,
-                updatedAt: new Date()
-            },
+        // First try to find the existing token
+        const existingToken = await prisma.token.findUnique({
+            where: { address: tokenInfo.address }
         });
 
-        return tokenData;
+        if (existingToken) {
+            // Update existing token
+            const tokenData = await prisma.token.update({
+                where: { id: existingToken.id },
+                data: {
+                    name: tokenInfo.name,
+                    symbol: tokenInfo.symbol,
+                    decimals: tokenInfo.decimals,
+                    logoURI: tokenInfo.logoURI,
+                    updatedAt: new Date()
+                }
+            });
+            return tokenData;
+        } else {
+            // Create new token
+            const tokenData = await prisma.token.create({
+                data: {
+                    address: tokenInfo.address,
+                    name: tokenInfo.name,
+                    symbol: tokenInfo.symbol,
+                    decimals: tokenInfo.decimals,
+                    logoURI: tokenInfo.logoURI,
+                    updatedAt: new Date()
+                }
+            });
+            return tokenData;
+        }
     } catch (error) {
         logger.error(`Error updating token data: ${error instanceof Error ? error.message : String(error)}`);
         throw error;

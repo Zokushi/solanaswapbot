@@ -2,8 +2,8 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { ConfigService } from '../../services/configService.js';
-import { getTradeLogs } from '../../services/getTradeLogs.js';
 import { Socket } from 'socket.io-client';
+import { shortenUUID } from '../../utils/helper.js';
 
 interface DashboardProps {
   socket: Socket;
@@ -13,7 +13,7 @@ interface DashboardProps {
 
 interface BotMetrics {
   botId: string;
-  targetMint?: string; // Optional for regular bots
+  targetMint?: string;
   difference: number;
   currentPrice: number;
   ratio: number;
@@ -32,6 +32,7 @@ const Dashboard: React.FC<DashboardProps> = ({ socket, height = 20 }) => {
   // Fetch active bot IDs and trade logs
   const fetchData = React.useCallback(async () => {
     try {
+      console.clear(); // Clear the console before refreshing
       setLoading(true);
       const configService = new ConfigService();
       const allConfigs = await configService.getAllConfigs();
@@ -124,15 +125,13 @@ const Dashboard: React.FC<DashboardProps> = ({ socket, height = 20 }) => {
     );
   }
 
-  // Calculate total active bots
-  const totalActiveBots = Array.from(metrics.keys()).length;
 
   return (
     <Box flexDirection="column" height={height}>
       <Text bold>Active Bots Dashboard</Text>
       <Box marginTop={1}>
         <Text>
-          {'Bot ID'.padEnd(15)} {'Diff %'.padEnd(10)} {'Current'.padEnd(10)} {'Input'.padEnd(12)} {'Output'.padEnd(18)} {'Trades'.padEnd(8)}
+          {'Bot ID'.padEnd(12)} {'Diff %'.padEnd(10)} {'Current'.padEnd(10)} {'Input'.padEnd(12)} {'Output'.padEnd(18)} {'Trades'.padEnd(8)}
         </Text>
       </Box>
       <Box marginTop={1} flexDirection="column">
@@ -140,7 +139,7 @@ const Dashboard: React.FC<DashboardProps> = ({ socket, height = 20 }) => {
           <Box key={botId} flexDirection="column">
             {Array.from(targetMetrics.values()).map((metric, index) => (
               <Text key={`${botId}-${metric.targetMint || metric.outputToken || index}`}>
-                {botId.padEnd(15)} 
+                {shortenUUID(botId).padEnd(12)} 
                 {metric.difference.toFixed(2).padEnd(10)} 
                 {metric.currentPrice.toFixed(2).padEnd(12)} 
                 {(metric.inputToken || 'N/A').padEnd(15)} 

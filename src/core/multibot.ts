@@ -13,9 +13,10 @@ import { Socket } from "socket.io-client";
  */
 export class MultiBot {
   // Public properties
-  public readonly botId: bigint;
+  public readonly botId: string;
   public status: BotStatus;
   public difference: number;
+  public ratio: number;
   public currentTrade: number;
   public currentMint: Address;
   public currentTokenAccount: Address;
@@ -56,6 +57,7 @@ export class MultiBot {
     this.socket = socket;
     this.difference = 0;
     this.currentTrade = 0;
+    this.ratio = 0;
     this.status = "Running";
     this.initialBalance = config.initialBalance;
     this.targetAmounts = config.targetAmounts;
@@ -77,7 +79,7 @@ export class MultiBot {
     );
     this.notificationService = new NotificationService();
 
-    logger.info(`[Bot ${this.botId.toString()}] Starting initialization`);
+    logger.info(`[Bot ${this.botId}] Starting initialization`);
     this.init().catch((error) => {
       const errorMsg = `[Bot ${this.botId}] Initialization failed: ${error instanceof Error ? error.message : String(error)}`;
       logger.error(errorMsg);
@@ -338,8 +340,8 @@ export class MultiBot {
   };
 
   public terminateSession(): void {
-    logger.info(`[Bot ${this.botId.toString()}] Terminating bot...`);
-    this.notificationService.log(`[Bot ${this.botId.toString()}] ❌ Terminating bot...`, Number(this.botId));
+    logger.info(`[Bot ${this.botId}] Terminating bot...`);
+    this.notificationService.log(`[Bot ${this.botId}] ❌ Terminating bot...`, (this.botId));
     this.stopped = true;
 
     if (this.priceWatchIntervalId) {
@@ -347,8 +349,8 @@ export class MultiBot {
       this.priceWatchIntervalId = undefined;
     }
 
-    logger.info(`[Bot ${this.botId.toString()}] Bot terminated successfully`);
-    this.notificationService.log(`[Bot ${this.botId.toString()}] Bot terminated successfully`, Number(this.botId));
+    logger.info(`[Bot ${this.botId}] Bot terminated successfully`);
+    this.notificationService.log(`[Bot ${this.botId}] Bot terminated successfully`, (this.botId));
   }
 
   private serializeForSocket(data: any): any {
