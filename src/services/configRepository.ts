@@ -74,4 +74,4 @@ export class MultiConfigRepository extends PrismaRepository<MultiConfig & { targ
       include: { targetAmounts: true }
     });
   }
-} 
+}

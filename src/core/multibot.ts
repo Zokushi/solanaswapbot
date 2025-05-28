@@ -4,6 +4,7 @@ import { address, Address, createSolanaRpcSubscriptions, getAddressFromPublicKey
 import { getTokenDecimalsByAddress, getTokenDecimalsByAddressRaw, getTokenName } from "../utils/helper.js";
 import { TradeService } from "../services/tradeService.js";
 import { NotificationService } from "../services/notificationService.js";
+import { ConfigService } from "../services/configService.js";
 import { Socket } from "socket.io-client";
 
 /**
@@ -34,6 +35,7 @@ export class MultiBot {
   private readonly socket: Socket;
   private readonly tradeService: TradeService;
   private readonly notificationService: NotificationService;
+  private readonly configService: ConfigService;
   private priceWatchIntervalId?: NodeJS.Timeout;
   private lastCheck: number;
   private stopped: boolean;
@@ -77,6 +79,7 @@ export class MultiBot {
       this.setWaitingForConfirmation.bind(this)
     );
     this.notificationService = new NotificationService();
+    this.configService = new ConfigService();
 
     logger.info(`[Bot ${this.botId}] Starting initialization`);
     this.init().catch((error) => {
@@ -283,7 +286,21 @@ export class MultiBot {
         }
         return [mint, amount * gainFactor];
       })
-    )
+    );
+
+    try {
+      await this.configService.updateBotConfig(this.botId, {
+        botId: this.botId,
+        initialInputToken: await getTokenName(this.currentMint)!,
+        initialBalance: this.initialBalance,
+        targetAmounts: this.targetAmounts,
+        targetGainPercentage: this.targetGainPercentage,
+        checkInterval: this.checkInterval,
+      });
+      logger.info(`[Bot ${this.botId}] Successfully updated config file after trade`);
+    } catch (error) {
+      logger.error(`[Bot ${this.botId}] Failed to update config file: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
     const logAmount = await getTokenDecimalsByAddress(inputMint as Address, parseFloat(inAmount));
     const logOutAmount = await getTokenDecimalsByAddress(outputMint as Address, parseFloat(outAmount));
