@@ -1,13 +1,7 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
 import { getCachedTokens, type Token } from '../../utils/tokenCache.js';
-
-
-interface TokenSelectorProps {
-  onSelect: (token: Token) => void;
-  onCancel: () => void;
-}
-
+import { TokenSelectorProps } from '../../core/types.js';
 const DISPLAY_LIMIT = 10;
 
 const TokenSelector: React.FC<TokenSelectorProps> = ({ onSelect, onCancel }) => {

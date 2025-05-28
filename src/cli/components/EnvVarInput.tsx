@@ -5,6 +5,7 @@ import { writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import logger from '../../utils/logger.js';
 
 interface EnvVarInputProps {
   onComplete: () => void;
@@ -35,6 +36,7 @@ export const EnvVarInput: React.FC<EnvVarInputProps> = ({ onComplete }) => {
         envContent = readFileSync(envPath, 'utf8');
       } catch (error) {
         // File doesn't exist, that's okay
+        logger.info('Creating new .env file');
       }
 
       // Check if variable already exists
@@ -48,56 +50,41 @@ export const EnvVarInput: React.FC<EnvVarInputProps> = ({ onComplete }) => {
       }
 
       writeFileSync(envPath, lines.join('\n'));
+      logger.info(`Saved environment variable: ${key}`);
       return true;
     } catch (error) {
-      console.error('Failed to save environment variable:', error);
+      logger.error('Failed to save environment variable:', error);
       return false;
     }
   };
 
   useInput((input, key) => {
-    if (key.return && inputValue.trim()) {
+    if (currentVarIndex >= missingVars.length) {
+      onComplete();
+      return;
+    }
+
+    if (key.return) {
       const currentVar = missingVars[currentVarIndex];
-      if (saveEnvVariable(currentVar, inputValue.trim())) {
+      if (saveEnvVariable(currentVar, inputValue)) {
         setInputValue('');
-        if (currentVarIndex < missingVars.length - 1) {
-          setCurrentVarIndex(prev => prev + 1);
-        } else {
-          // Recheck variables after all are set
-          const newCheck = checkVariables();
-          if (!newCheck.success) {
-            setMissingVars(newCheck.missingVars);
-            setCurrentVarIndex(0);
-          } else {
-            onComplete();
-          }
-        }
+        setCurrentVarIndex(prev => prev + 1);
       }
-    } else if (key.backspace) {
+    } else if (key.backspace || key.delete) {
       setInputValue(prev => prev.slice(0, -1));
-    } else if (input) {
+    } else {
       setInputValue(prev => prev + input);
     }
   });
 
-  if (missingVars.length === 0) {
+  if (currentVarIndex >= missingVars.length) {
     return null;
   }
 
   return (
     <Box flexDirection="column">
-      <Text bold color="yellow">Missing Environment Variables</Text>
-      <Box marginTop={1}>
-        <Text color="cyan">
-          Please enter value for {missingVars[currentVarIndex]}:
-        </Text>
-      </Box>
-      <Box marginTop={1}>
-        <Text color="green">{inputValue}</Text>
-      </Box>
-      <Box marginTop={1}>
-        <Text color="blue">Press Enter to save, Backspace to delete</Text>
-      </Box>
+      <Text>Please enter the value for {missingVars[currentVarIndex]}:</Text>
+      <Text>Current input: {inputValue}</Text>
     </Box>
   );
 }; 

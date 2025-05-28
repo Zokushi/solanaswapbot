@@ -3,7 +3,6 @@ import NodeCache from "node-cache";
 import { ENV } from "../config/index.js";
 import logger from "./logger.js";
 import prisma from "./prismaClient.js";
-import fetch from "cross-fetch";
 
 /**
  * Fetches the decimals for a token by its name.

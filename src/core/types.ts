@@ -1,10 +1,10 @@
 import { RoutePlanStep} from "@jup-ag/api";
 import { Address, Rpc, createSolanaRpcSubscriptions, SolanaRpcApiMainnet } from "@solana/kit";
-import { DefaultBotManager } from "./botManager.js";
 import { Socket } from "socket.io-client";
 import { MultiConfig, TargetAmount } from "@prisma/client";
 import { Config } from "jest";
 import { TradeBot } from "./bot.js";
+import { type Token } from '../utils/tokenCache.js';
 import MultiBot from "./multibot.js";
 
 // Utility type for BigInt values that can be safely converted to/from numbers
@@ -106,7 +106,7 @@ export interface TradeBotConfig {
   rpc: Rpc<SolanaRpcApiMainnet>;
   subscriptions?: ReturnType<typeof createSolanaRpcSubscriptions>;
   firstTradePrice: number;
-  stopLossPercentage?: PercentageBigInt;
+  stopLossPercentage?: number;
   targetGainPercentage: number;
   checkInterval?: number;
   initialInputToken: string;
@@ -240,18 +240,18 @@ export type TokenInfo = {
   logoURI: string;
 }
 
+export type BotStatus = "running" | "stopped";
+
 export interface BotResponse {
   botId: string;
-  status: string;
+  status: BotStatus;
 }
 
 export interface MultiBotResponse {
   botId: string;
-  status: string;
+  status: BotStatus;
   targetAmounts: targetAmounts[];
 }
-
-export type BotStatus = "Running" | "Stopped" | "active" | "inactive";
 
 export interface Bot {
   botId: string;
@@ -322,26 +322,43 @@ export interface BotManager {
   updateMultiBotConfig(botId: string, config: Partial<MultiBotConfig>): Promise<void>;
 }
 
+export interface SocketService {
+  getSocket(): Socket;
+  emit(event: string, data: any): void;
+  on(event: string, handler: (data: any) => void): void;
+  off(event: string, handler: (data: any) => void): void;
+disconnect(): void;
+}
+
 export type SortField = 'type' | 'amount' | 'status';
 export type SortDirection = 'asc' | 'desc';
 export type FilterType = 'all' | 'active' | 'inactive';
 
-export interface ConfigListProps {
-  onBack: () => void;
-  botManager: DefaultBotManager;
+export interface DashboardProps {
   socket: Socket;
+  height?: number;
+  onRefresh: () => void;
+}
+
+export interface ConfigListProps {
+  socket: Socket;
+  botManager: BotManager;
+  onBack: () => void;
+  onEdit?: (type: 'regular' | 'multi', config: any) => void;
 }
 
 export interface RegularBotFormProps {
   onComplete: () => void;
-  botManager: DefaultBotManager;
-  socket: Socket;
-  editingConfig?: BotWithType | null;
+  editingConfig?: any;
 }
 
 export interface MultiBotFormProps {
   onComplete: () => void;
-  botManager: DefaultBotManager;
-  socket: Socket;
-  editingConfig?: BotWithType | null;
+  editingConfig?: any;
 } 
+
+
+export interface TokenSelectorProps {
+  onSelect: (token: Token) => void;
+  onCancel: () => void;
+}

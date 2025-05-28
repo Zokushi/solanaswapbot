@@ -1,16 +1,15 @@
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
-import RegularBotForm from './forms/RegularBotForm.js';
-import MultiBotForm from './forms/MultiBotForm.js';
-import ConfigList from './components/ConfigList.js';
-import Dashboard from './components/Dashboard.js';
 import { DefaultBotManager } from '../core/botManager.js';
-import { Socket } from 'socket.io-client';
 import { CLISocket } from './services/CLISocket.js';
-import { EnvVarInput } from './components/EnvVarInput.js';
-import { StopAllBotsDialog } from './components/StopAllBotsDialog.js';
-import { MainMenu } from './components/MainMenu.js';
 import { useBotManagement } from './hooks/useBotManagement.js';
+import RegularBotForm from './forms/RegularBotForm.js';
+import { MultiBotForm } from './forms/MultiBotForm.js';
+import ConfigList from './components/ConfigList.js';
+import { AppProvider } from './context/AppContext.js';
+import { EnvVarInput } from './components/EnvVarInput.js';
+import { MainMenu } from './components/MainMenu.js';
+import Dashboard from './components/Dashboard.js';
 import logger from '../utils/logger.js';
 
 const TRADE_BOT_ASCII = `
@@ -22,10 +21,6 @@ const TRADE_BOT_ASCII = `
    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚══════╝    ╚═════╝  ╚═════╝    ╚═╝   
 `;
 
-// Initialize BotManager and socket
-const socket = new CLISocket();
-const botManager = new DefaultBotManager();
-
 const App = () => {
   const { exit } = useApp();
   const [selectedOption, setSelectedOption] = React.useState(0);
@@ -33,9 +28,13 @@ const App = () => {
   const [formType, setFormType] = React.useState<'regular' | 'multi' | null>(null);
   const [editingConfig, setEditingConfig] = React.useState<any>(null);
   const [showConfigList, setShowConfigList] = React.useState(false);
-  const [showConfirmStopAll, setShowConfirmStopAll] = React.useState(false);
   const [showConfirmStartAll, setShowConfirmStartAll] = React.useState(false);
   const [envVarsComplete, setEnvVarsComplete] = React.useState(false);
+
+  // Initialize services
+  const botManager = React.useMemo(() => new DefaultBotManager(), []);
+  const socket = React.useMemo(() => new CLISocket(botManager), [botManager]);
+  const eventBus = socket.getEventBus();
 
   const {
     activeBots,
@@ -66,7 +65,7 @@ const App = () => {
     }
   }, [envVarsComplete, checkActiveBots]);
 
-  // Set up socket listener for config edit
+  // Set up event listener for config edit
   React.useEffect(() => {
     const handleConfigEdit = (data: { type: 'regular' | 'multi', config: any }) => {
       setFormType(data.type);
@@ -75,12 +74,12 @@ const App = () => {
       setShowConfigList(false);
     };
 
-    socket.getSocket().on('config:edit', handleConfigEdit);
+    eventBus.on('configUpdate', handleConfigEdit);
 
     return () => {
-      socket.getSocket().off('config:edit', handleConfigEdit);
+      eventBus.off('configUpdate', handleConfigEdit);
     };
-  }, [socket]);
+  }, [eventBus]);
 
   // Add cleanup function
   const cleanup = React.useCallback(async () => {
@@ -110,30 +109,24 @@ const App = () => {
       await cleanup();
     };
 
+    // Remove any existing listeners first
+    process.removeAllListeners('SIGINT');
+    process.removeAllListeners('SIGTERM');
+    
+    // Set max listeners to a reasonable number
+    process.setMaxListeners(20);
+
     process.on('SIGINT', handleSignal);
     process.on('SIGTERM', handleSignal);
 
     return () => {
-      process.off('SIGINT', handleSignal);
-      process.off('SIGTERM', handleSignal);
+      process.removeAllListeners('SIGINT');
+      process.removeAllListeners('SIGTERM');
     };
   }, [cleanup]);
 
   useInput((input, key) => {
     if (!envVarsComplete || showForm || showConfigList) return;
-
-    if (showConfirmStopAll) {
-      if (key.return && stoppingProgress.status === 'idle') {
-        handleStopAllBots();
-      } else if (key.escape && stoppingProgress.status === 'idle') {
-        setShowConfirmStopAll(false);
-        setStoppingProgress({ current: 0, total: 0, status: 'idle', message: '' });
-      } else if (stoppingProgress.status === 'success' && input) {
-        setShowConfirmStopAll(false);
-        setStoppingProgress({ current: 0, total: 0, status: 'idle', message: '' });
-      }
-      return;
-    }
 
     if (showConfirmStartAll) {
       if (key.return && startingProgress.status === 'idle') {
@@ -168,7 +161,7 @@ const App = () => {
       } else if (selectedOption === 3) { // Start All Bots
         setShowConfirmStartAll(true);
       } else if (selectedOption === 4) { // Stop All Bots
-        setShowConfirmStopAll(true);
+        handleStopAllBots();
       }
     }
   });
@@ -180,106 +173,125 @@ const App = () => {
   if (showForm) {
     if (formType === 'regular') {
       return (
-        <RegularBotForm 
-          onComplete={() => {
-            setShowForm(false);
-            setEditingConfig(null);
-          }} 
-          botManager={botManager} 
-          socket={socket.getSocket()}
-          editingConfig={editingConfig}
-        />
+        <AppProvider>
+          <RegularBotForm 
+            onComplete={() => {
+              setShowForm(false);
+              setEditingConfig(null);
+            }}
+            editingConfig={editingConfig}
+          />
+        </AppProvider>
       );
     } else if (formType === 'multi') {
       return (
-        <MultiBotForm 
-          onComplete={() => {
-            setShowForm(false);
-            setEditingConfig(null);
-          }} 
-          botManager={botManager} 
-          socket={socket.getSocket()}
-          editingConfig={editingConfig}
-        />
+        <AppProvider>
+          <MultiBotForm 
+            onComplete={() => {
+              setShowForm(false);
+              setEditingConfig(null);
+            }}
+            editingConfig={editingConfig}
+          />
+        </AppProvider>
       );
     }
   }
 
   if (showConfigList) {
-    return <ConfigList onBack={() => setShowConfigList(false)} botManager={botManager} socket={socket.getSocket()} />;
-  }
-
-  if (showConfirmStopAll) {
     return (
-      <StopAllBotsDialog
-        activeBots={activeBots}
-        stoppingProgress={stoppingProgress}
-        onConfirm={handleStopAllBots}
-        onCancel={() => {
-          setShowConfirmStopAll(false);
-          setStoppingProgress({ current: 0, total: 0, status: 'idle', message: '' });
-        }}
-      />
+      <AppProvider>
+        <ConfigList 
+          onBack={() => {
+            setShowConfigList(false);
+            setSelectedOption(0); // Reset selection to first option
+          }} 
+          botManager={botManager} 
+          socket={socket.getSocket()} 
+        />
+      </AppProvider>
     );
   }
 
   return (
-    <Box flexDirection="column">
-      <Text color="cyan">{TRADE_BOT_ASCII}</Text>
-      <Text bold color="white">Welcome to Trading Bot CLI</Text>
-      
-      {/* Dashboard Section */}
-      <Box marginTop={1}>
-        <Dashboard 
-          socket={socket.getSocket() as unknown as Socket} 
-          height={12} 
-          onRefresh={() => checkActiveBots()} 
-        />
-      </Box>
+    <AppProvider>
+      <Box flexDirection="column">
+        <Text color="cyan">{TRADE_BOT_ASCII}</Text>
+        <Text bold color="white">Welcome to Trading Bot CLI</Text>
+        
+        {/* Dashboard Section */}
+        <Box marginTop={1}>
+          <Dashboard 
+            socket={socket.getSocket()} 
+            height={12} 
+            onRefresh={() => checkActiveBots()} 
+          />
+        </Box>
 
-      {/* Menu Section */}
-      <MainMenu selectedOption={selectedOption} options={options} />
+        {/* Menu Section */}
+        <MainMenu selectedOption={selectedOption} options={options} />
 
-      {/* Start All Bots Confirmation */}
-      {showConfirmStartAll && (
-        <Box marginTop={2} flexDirection="column">
-          <Text bold color="green">Confirm Start All Bots</Text>
-          <Box marginTop={1}>
-            <Text color="yellow">Are you sure you want to start all inactive bots?</Text>
-          </Box>
-          <Box marginTop={1}>
-            <Text color="cyan">Inactive bots: {startingProgress.total}</Text>
-          </Box>
-          {startingProgress.status !== 'idle' && (
-            <Box marginTop={1} flexDirection="column">
-              {startingProgress.status === 'starting' && (
-                <Box>
-                  <Text color="yellow">
-                    Progress: {startingProgress.current}/{startingProgress.total}
-                  </Text>
-                </Box>
-              )}
-              <Text color={
-                startingProgress.status === 'success' ? 'green' :
-                startingProgress.status === 'error' ? 'red' : 'white'
-              }>
-                {startingProgress.message}
+        {/* Start All Bots Confirmation */}
+        {showConfirmStartAll && (
+          <Box marginTop={2} flexDirection="column">
+            <Text bold color="green">Confirm Start All Bots</Text>
+            <Box marginTop={1}>
+              <Text color="yellow">Are you sure you want to start all bots?</Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text color="cyan">Active bots: {startingProgress.total}</Text>
+            </Box>
+            {startingProgress.status !== 'idle' && (
+              <Box marginTop={1} flexDirection="column">
+                {startingProgress.status === 'starting' && (
+                  <Box>
+                    <Text color="yellow">
+                      Progress: {startingProgress.current}/{startingProgress.total}
+                    </Text>
+                  </Box>
+                )}
+                <Text color={
+                  startingProgress.status === 'success' ? 'green' :
+                  startingProgress.status === 'error' ? 'red' : 'white'
+                }>
+                  {startingProgress.message}
+                </Text>
+              </Box>
+            )}
+            <Box marginTop={1}>
+              <Text color="blue">
+                {startingProgress.status === 'idle' ? 
+                  'Press Enter to confirm, Escape to cancel' :
+                  startingProgress.status === 'success' ? 
+                    'Press any key to continue' :
+                    'Press Escape to cancel'
+                }
               </Text>
             </Box>
-          )}
-          <Box marginTop={1}>
-            <Text color="blue">
-              {startingProgress.status === 'idle' ? 
-                'Press Enter to confirm, Escape to cancel' :
-                startingProgress.status === 'success' ? 
-                  'Press any key to continue' :
-                  'Press Escape to cancel'
-              }
+          </Box>
+        )}
+
+        {/* Stop All Bots Progress */}
+        {stoppingProgress.status !== 'idle' && (
+          <Box marginTop={2} flexDirection="column">
+            <Text bold color="red">Stop All Bots Progress</Text>
+            {stoppingProgress.status === 'stopping' && (
+              <Box marginTop={1}>
+                <Text color="yellow">
+                  Progress: {stoppingProgress.current}/{stoppingProgress.total}
+                </Text>
+              </Box>
+            )}
+            <Text color={
+              stoppingProgress.status === 'success' ? 'green' :
+              stoppingProgress.status === 'error' ? 'red' : 'white'
+            }>
+              {stoppingProgress.message}
             </Text>
           </Box>
-        </Box>
-      )}
-    </Box>
+        )}
+      </Box>
+    </AppProvider>
   );
 };
 

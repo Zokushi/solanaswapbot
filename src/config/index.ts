@@ -1,14 +1,29 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import logger from '../utils/logger.js';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envPath = path.resolve(__dirname, '../../.env');
+
+// Load environment variables
+dotenv.config({ path: envPath });
+
 function reloadEnv() {
-  const envConfig = dotenv.parse(fs.readFileSync('.env'));
-  for (const k in envConfig) {
-    process.env[k] = envConfig[k];
+  try {
+    const envConfig = dotenv.parse(fs.readFileSync(envPath));
+    for (const k in envConfig) {
+      process.env[k] = envConfig[k];
+    }
+    logger.info('Environment variables loaded successfully');
+  } catch (error) {
+    logger.error('Failed to load environment variables:', error);
+    throw error;
   }
 }
+
 reloadEnv();
 
 export const ENV = {
@@ -16,8 +31,8 @@ export const ENV = {
   wallet: process.env.KEY,
   solanaEndpoint: process.env.RPC_URL,
   wss: process.env.WSS_URL,
-  // Add other environment variables here
-};
+  SOCKET_URL: process.env.SOCKET_URL || 'http://localhost:4000'
+} as const;
 
 export function checkVariables() {
   const requiredVars = ['KEY', 'RPC_URL', 'WSS_URL'];

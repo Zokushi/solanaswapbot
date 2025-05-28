@@ -2,14 +2,8 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { ConfigService } from '../../services/configService.js';
-import { Socket } from 'socket.io-client';
 import { shortenUUID } from '../../utils/helper.js';
-
-interface DashboardProps {
-  socket: Socket;
-  height?: number; // Number of rows for the dashboard
-  onRefresh: () => void; // Callback for manual refresh
-}
+import { DashboardProps } from '../../core/types.js';
 
 interface BotMetrics {
   botId: string;
@@ -23,7 +17,7 @@ interface BotMetrics {
   type: 'regular' | 'multi';
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ socket, height = 20 }) => {
+const Dashboard: React.FC<DashboardProps> = ({ socket, height = 20, onRefresh }) => {
   const [activeBotIds, setActiveBotIds] = React.useState<Set<string>>(new Set());
   const [metrics, setMetrics] = React.useState<Map<string, Map<string, BotMetrics>>>(new Map());
   const [loading, setLoading] = React.useState(true);
@@ -32,7 +26,6 @@ const Dashboard: React.FC<DashboardProps> = ({ socket, height = 20 }) => {
   // Fetch active bot IDs and trade logs
   const fetchData = React.useCallback(async () => {
     try {
-      console.clear(); // Clear the console before refreshing
       setLoading(true);
       const configService = new ConfigService();
       const allConfigs = await configService.getAllConfigs();
@@ -40,17 +33,16 @@ const Dashboard: React.FC<DashboardProps> = ({ socket, height = 20 }) => {
       // Get active bot IDs
       const activeIds = new Set<string>();
       allConfigs.regularBots.forEach(bot => {
-        if (bot.status === 'active') {
+        if (bot.status === 'running') {
           activeIds.add(bot.botId.toString());
         }
       });
       allConfigs.multiBots.forEach(bot => {
-        if (bot.status === 'active') {
+        if (bot.status === 'running') {
           activeIds.add(bot.botId.toString());
         }
       });
       setActiveBotIds(activeIds);
-
 
       setError(null);
     } catch (err) {
@@ -61,9 +53,19 @@ const Dashboard: React.FC<DashboardProps> = ({ socket, height = 20 }) => {
     }
   }, []);
 
+  // Initial data fetch
   React.useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Set up refresh interval
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      onRefresh();
+    }, 10000); // Refresh every 10 seconds instead of 5
+
+    return () => clearInterval(interval);
+  }, [onRefresh]);
 
   // Handle bot:difference events
   React.useEffect(() => {
@@ -125,6 +127,17 @@ const Dashboard: React.FC<DashboardProps> = ({ socket, height = 20 }) => {
     );
   }
 
+  // Add message when no metrics are available but bots are active
+  if (activeBotIds.size > 0 && (!metrics.size || Array.from(metrics.values()).every(m => m.size === 0))) {
+    return (
+      <Box flexDirection="column">
+        <Text bold>Active Bots Dashboard</Text>
+        <Box marginTop={1}>
+          <Text color="yellow">Please wait 20-30 seconds for the table to populate with bot data...</Text>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" height={height}>

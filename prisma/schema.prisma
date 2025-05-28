@@ -31,7 +31,7 @@ model Config {
   firstTradePrice       Float   
   targetGainPercentage  Float
   stopLossPercentage    Int?
-  status               String    @default("inactive")
+  status               String    @default("stopped")
 }
 
 model MultiConfig {
@@ -42,13 +42,14 @@ model MultiConfig {
   stopLossPercentage    Int?
   targetAmounts         TargetAmount[] @relation("ConfigTargetAmounts")
   checkInterval         Int?
-  status               String    @default("inactive")
+  status               String    @default("stopped")
 }
 
 model TargetAmount {
   id                    Int         @id @default(autoincrement())
   configId              String      // Changed from BigInt to String for UUID
   tokenAddress          String
+  tokenName             String      // Added for easier token identification
   amount                Float
   config                MultiConfig   @relation("ConfigTargetAmounts", fields: [configId], references: [botId], onDelete: Cascade)
 }

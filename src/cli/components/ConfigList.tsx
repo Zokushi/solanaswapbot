@@ -1,12 +1,20 @@
-import React from 'react';
+import React, {  useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { getTokenName, shortenUUID } from '../../utils/helper.js';
+import { Socket } from 'socket.io-client';
+import { BotManager } from '../../core/types.js';
+import { shortenUUID } from '../../utils/helper.js';
 import { ConfigListProps, SortField, SortDirection, FilterType, BotWithType, ConfigListState } from '../../core/types.js';
-import { ENV } from '../../config/index.js';
 import { getSingleTokenData } from '../../services/tokenDataService.js';
+import { useAppContext } from '../context/AppContext.js';
+import { ConfigData } from '../../services/eventBus.js';
+import logger from '../../utils/logger.js';
+import { useApp } from 'ink';
 
-const ConfigList: React.FC<ConfigListProps> = ({ onBack, botManager, socket }) => {
-  const [configs, setConfigs] = React.useState<ConfigListState>({ regularBots: [], multiBots: [] });
+export const ConfigList: React.FC<ConfigListProps> = ({ socket, botManager, onBack }) => {
+  const { cliSocket } = useAppContext();
+  const eventBus = cliSocket.getEventBus();
+  const { exit } = useApp();
+  const [configs, setConfigs] = React.useState<ConfigData>({ regularBots: [], multiBots: [] });
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const [sortField, setSortField] = React.useState<SortField>('type');
   const [sortDirection, setSortDirection] = React.useState<SortDirection>('asc');
@@ -15,68 +23,52 @@ const ConfigList: React.FC<ConfigListProps> = ({ onBack, botManager, socket }) =
   const [selectedConfig, setSelectedConfig] = React.useState<BotWithType | null>(null);
   const [selectedAction, setSelectedAction] = React.useState<'view' | 'delete' | 'edit'>('view');
   const [tokenNames, setTokenNames] = React.useState<Map<string, string>>(new Map());
+  const [loading, setLoading] = React.useState(true);
 
-  const fetchConfigs = React.useCallback(() => {
+  const fetchConfigs = useCallback(() => {
     try {
-      // Emit event to request configs
-      socket.emit('config:get');
+      logger.info('Fetching configs...');
+      eventBus.emit('config:get', {});
     } catch (error) {
-      console.error('Failed to request configs:', error);
+      logger.error('Error fetching configs:', error);
       setError('Failed to fetch configurations');
+      setLoading(false);
     }
-  }, [socket]);
+  }, [eventBus]);
 
-  // Set up socket listener for config updates
   React.useEffect(() => {
-    const handleConfigUpdate = (data: any) => {
+    const handleConfigUpdate = (data: ConfigData) => {
       try {
-        // Transform the data to match our types
-        const regularBots = data.regularBots.map((bot: any) => ({
-          botId: bot.botId,
-          initialInputToken: bot.initialInputToken,
-          initialOutputToken: bot.initialOutputToken,
-          initialInputAmount: bot.initialInputAmount,
-          firstTradePrice: bot.firstTradePrice,
-          targetGainPercentage: bot.targetGainPercentage,
-          stopLossPercentage: bot.stopLossPercentage,
-          status: bot.status
-        }));
-
-        const multiBots = data.multiBots.map((bot: any) => ({
-          botId: bot.botId,
-          initialInputToken: bot.initialInputToken,
-          initialInputAmount: bot.initialInputAmount,
-          targetGainPercentage: bot.targetGainPercentage,
-          stopLossPercentage: bot.stopLossPercentage,
-          checkInterval: bot.checkInterval,
-          status: bot.status,
-          targetAmounts: bot.targetAmounts.map((target: any) => ({
-            id: target.id,
-            configId: target.configId,
-            tokenAddress: target.tokenAddress,
-            amount: target.amount
-          }))
-        }));
-
-        setConfigs({ regularBots, multiBots });
+        logger.info('Received config update:', data);
+        setConfigs(data);
         setError(null);
+        setLoading(false);
       } catch (error) {
-        console.error('Failed to process configs:', error);
+        logger.error('Failed to process configs:', error);
         setError('Failed to process configurations');
+        setLoading(false);
       }
     };
 
-    // Listen for config updates
-    socket.on('config:update', handleConfigUpdate);
+    const handleError = (error: any) => {
+      logger.error('Socket error:', error);
+      setError(error.message || 'An error occurred');
+      setLoading(false);
+    };
 
-    // Request initial configs
+    // Set up event bus listeners
+    eventBus.on('configUpdate', handleConfigUpdate);
+    eventBus.on('error', handleError);
+
+    // Initial fetch
     fetchConfigs();
 
-    // Cleanup
+    // Cleanup function
     return () => {
-      socket.off('config:update', handleConfigUpdate);
+      eventBus.off('configUpdate', handleConfigUpdate);
+      eventBus.off('error', handleError);
     };
-  }, [socket, fetchConfigs]);
+  }, [eventBus, fetchConfigs]);
 
   const fetchTokenNames = React.useCallback(async (mints: (string | undefined)[]) => {
     try {
@@ -164,9 +156,9 @@ const ConfigList: React.FC<ConfigListProps> = ({ onBack, botManager, socket }) =
     
     // Apply filter
     if (filter === 'active') {
-      filtered = filtered.filter(bot => bot.status === 'active');
+      filtered = filtered.filter(bot => bot.status === 'running');
     } else if (filter === 'inactive') {
-      filtered = filtered.filter(bot => bot.status === 'inactive');
+      filtered = filtered.filter(bot => bot.status === 'stopped');
     }
 
     // Apply sort
@@ -258,10 +250,10 @@ const ConfigList: React.FC<ConfigListProps> = ({ onBack, botManager, socket }) =
     
     try {
       // First stop the bot if it's running
-      await botManager.stopBot(selectedConfig.botId);
+      await cliSocket.stopBot(selectedConfig.botId);
       
       // Then delete the configuration
-      await botManager.deleteConfig(
+      await cliSocket.deleteConfig(
         selectedConfig.botId,
         selectedConfig.type
       );
@@ -279,14 +271,22 @@ const ConfigList: React.FC<ConfigListProps> = ({ onBack, botManager, socket }) =
   const handleEdit = () => {
     if (!selectedConfig) return;
     
+    // Convert BigInt values to strings before sending
+    const configToSend = {
+      ...selectedConfig,
+      targetGainPercentage: selectedConfig.targetGainPercentage?.toString(),
+      stopLossPercentage: selectedConfig.stopLossPercentage?.toString(),
+      firstTradePrice: selectedConfig.firstTradePrice?.toString()
+    };
+    
     // Emit the edit event first
-    socket.emit('config:edit', {
+    eventBus.emit('config:edit', {
       type: selectedConfig.type,
-      config: selectedConfig
+      config: configToSend
     });
 
     // Then go back to main menu
-    onBack();
+    exit();
   };
 
   const handleViewConfig = (config: BotWithType) => {
@@ -325,9 +325,17 @@ const ConfigList: React.FC<ConfigListProps> = ({ onBack, botManager, socket }) =
     );
   };
 
+  if (loading) {
+    return (
+      <Box>
+        <Text>Loading configurations...</Text>
+      </Box>
+    );
+  }
+
   if (error) {
     return (
-      <Box flexDirection="column">
+      <Box>
         <Text color="red">{error}</Text>
       </Box>
     );
@@ -363,8 +371,8 @@ const ConfigList: React.FC<ConfigListProps> = ({ onBack, botManager, socket }) =
     );
   }
 
-  const activeBots = filteredBots.filter(bot => bot.status === 'active');
-  const inactiveBots = filteredBots.filter(bot => bot.status === 'inactive');
+  const activeBots = filteredBots.filter(bot => bot.status === 'running');
+  const inactiveBots = filteredBots.filter(bot => bot.status === 'stopped');
 
   return (
     <Box flexDirection="column">

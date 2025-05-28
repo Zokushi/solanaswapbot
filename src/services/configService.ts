@@ -1,16 +1,14 @@
-import { PrismaClient, Config, MultiConfig, TargetAmount } from '@prisma/client';
+import { Config, MultiConfig, TargetAmount } from '@prisma/client';
+import { RegularConfigRepository } from './configRepository.js';
+import { MultiConfigRepository } from './configRepository.js';
+import { BigIntUtils, BotStatus } from '../core/types.js';
 import logger from '../utils/logger.js';
 
-export class ConfigService {
-  private prisma: PrismaClient;
+export class RegularConfigService {
+  private repository: RegularConfigRepository;
 
   constructor() {
-    this.prisma = new PrismaClient();
-  }
-
-  private convertStopLossPercentage(value: bigint | number | null | undefined): number | null {
-    if (value === null || value === undefined) return null;
-    return typeof value === 'bigint' ? Number(value) : value;
+    this.repository = new RegularConfigRepository();
   }
 
   async addConfig(data: {
@@ -20,231 +18,159 @@ export class ConfigService {
     initialInputAmount: number;
     firstTradePrice: number;
     targetGainPercentage: number;
-    stopLossPercentage?: bigint | number;
-  }) {
-    try {
-      const dbData = {
-        ...data,
-        stopLossPercentage: this.convertStopLossPercentage(data.stopLossPercentage),
-      };
-      // Check if config exists
-      const existingConfig = await this.prisma.config.findUnique({
-        where: { botId: data.botId }
-      });
-
-      if (existingConfig) {
-        // Update existing config
-        const updatedConfig = await this.prisma.config.update({
-          where: { botId: data.botId },
-          data: dbData
-        });
-        return updatedConfig;
-      }
-
-      // Create new config if it doesn't exist
-      const newConfig = await this.prisma.config.create({
-        data: dbData
-      });
-      return newConfig;
-    } catch (error) {
-      logger.error(`Error adding new configuration: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error('Failed to add configuration');
-    }
+    stopLossPercentage?: number;
+  }): Promise<Config> {
+    const configData = {
+      ...data,
+      stopLossPercentage: data.stopLossPercentage ? 
+        Number(BigIntUtils.fromPercentage(data.stopLossPercentage)) : 
+        null
+    };
+    return this.repository.create(configData);
   }
 
-  async addMultiConfig(data: {
+  async updateConfig(botId: string, data: Partial<Config>): Promise<Config> {
+    if (data.stopLossPercentage) {
+      data.stopLossPercentage = Number(BigIntUtils.fromPercentage(data.stopLossPercentage));
+    }
+    return this.repository.update(botId, data);
+  }
+
+  async deleteConfig(botId: string): Promise<Config> {
+    return this.repository.delete(botId);
+  }
+
+  async getConfig(botId: string): Promise<Config | null> {
+    return this.repository.findById(botId);
+  }
+
+  async getAllConfigs(): Promise<Config[]> {
+    return this.repository.findAll();
+  }
+}
+
+export class MultiConfigService {
+  private repository: MultiConfigRepository;
+
+  constructor() {
+    this.repository = new MultiConfigRepository();
+  }
+
+  async addConfig(data: {
     botId: string;
     initialInputToken: string;
     initialInputAmount: number;
     targetGainPercentage: number;
-    stopLossPercentage?: bigint | number;
+    stopLossPercentage?: number;
     checkInterval?: number;
-    targetAmounts: Record<string, number>;
-  }) {
+    targetAmounts: Array<{
+      tokenAddress: string;
+      amount: number;
+    }>;
+  }): Promise<MultiConfig & { targetAmounts: TargetAmount[] }> {
+    const configData = {
+      ...data,
+      stopLossPercentage: data.stopLossPercentage ? 
+        Number(BigIntUtils.fromPercentage(data.stopLossPercentage)) : 
+        null,
+      targetAmounts: data.targetAmounts.map(ta => ({
+        tokenAddress: ta.tokenAddress,
+        amount: ta.amount
+      }))
+    };
+    return this.repository.create(configData);
+  }
+
+  async updateConfig(
+    botId: string, 
+    data: Partial<MultiConfig & { targetAmounts: Array<{ tokenAddress: string; amount: number }> }>
+  ): Promise<MultiConfig & { targetAmounts: TargetAmount[] }> {
+    if (data.stopLossPercentage) {
+      data.stopLossPercentage = Number(BigIntUtils.fromPercentage(data.stopLossPercentage));
+    }
+    return this.repository.update(botId, data);
+  }
+
+  async deleteConfig(botId: string): Promise<MultiConfig & { targetAmounts: TargetAmount[] }> {
+    return this.repository.delete(botId);
+  }
+
+  async getConfig(botId: string): Promise<(MultiConfig & { targetAmounts: TargetAmount[] }) | null> {
+    return this.repository.findById(botId);
+  }
+
+  async getAllConfigs(): Promise<(MultiConfig & { targetAmounts: TargetAmount[] })[]> {
+    return this.repository.findAll();
+  }
+}
+
+/**
+ * ConfigService acts as the main facade for bot configuration management.
+ * It provides a unified interface for both regular and multi-token bot configurations.
+ * 
+ * Responsibilities:
+ * - Provides a single entry point for all configuration operations
+ * - Delegates to specialized services for bot-specific operations
+ * - Maintains backward compatibility
+ */
+export class ConfigService {
+  private regularService: RegularConfigService;
+  private multiService: MultiConfigService;
+
+  constructor() {
+    this.regularService = new RegularConfigService();
+    this.multiService = new MultiConfigService();
+  }
+
+  async addConfig(data: any): Promise<Config> {
+    return this.regularService.addConfig(data);
+  }
+
+  async addMultiConfig(data: any): Promise<MultiConfig & { targetAmounts: TargetAmount[] }> {
+    return this.multiService.addConfig(data);
+  }
+
+  async updateBotConfig(botId: string, data: any): Promise<Config> {
+    return this.regularService.updateConfig(botId, data);
+  }
+
+  async updateMultiBotConfig(botId: string, data: any): Promise<MultiConfig & { targetAmounts: TargetAmount[] }> {
+    return this.multiService.updateConfig(botId, data);
+  }
+
+  async deleteConfig(botId: string): Promise<Config> {
+    return this.regularService.deleteConfig(botId);
+  }
+
+  async deleteMultiConfig(botId: string): Promise<MultiConfig & { targetAmounts: TargetAmount[] }> {
+    return this.multiService.deleteConfig(botId);
+  }
+
+  async updateBotStatus(botId: string, status: BotStatus): Promise<void> {
     try {
-      const { targetAmounts, ...configData } = data;
-      
-      // Create the multi config first
-      const newConfig = await this.prisma.multiConfig.create({
-        data: {
-          ...configData,
-          stopLossPercentage: this.convertStopLossPercentage(configData.stopLossPercentage),
-          checkInterval: configData.checkInterval ?? null,
-        }
-      });
-
-      // Then create target amounts with proper IDs
-      const targetAmountEntries = Object.entries(targetAmounts).map(([tokenAddress, amount]) => ({
-        tokenAddress,
-        amount,
-        configId: newConfig.botId
-      }));
-
-      if (targetAmountEntries.length > 0) {
-        await this.prisma.targetAmount.createMany({
-          data: targetAmountEntries
-        });
+      // Try to update regular bot first
+      try {
+        await this.regularService.updateConfig(botId, { status });
+        return;
+      } catch (error) {
+        // If regular bot update fails, try multi bot
+        await this.multiService.updateConfig(botId, { status });
       }
-
-      return newConfig;
     } catch (error) {
-      logger.error("Error adding new multi-bot configuration:", error);
-      throw new Error("Failed to add multi-bot configuration");
+      logger.error(`Error updating bot status: ${error}`);
+      throw new Error('Failed to update bot status');
     }
   }
 
   async getAllConfigs(): Promise<{
-    regularBots: Array<Config & { status: string }>;
-    multiBots: Array<MultiConfig & { status: string; targetAmounts: TargetAmount[] }>;
+    regularBots: Config[];
+    multiBots: (MultiConfig & { targetAmounts: TargetAmount[] })[];
   }> {
-    try {
-      const regularBots = await this.prisma.config.findMany();
-      const multiBots = await this.prisma.multiConfig.findMany({
-        include: {
-          targetAmounts: true
-        }
-      });
+    const [regularBots, multiBots] = await Promise.all([
+      this.regularService.getAllConfigs(),
+      this.multiService.getAllConfigs()
+    ]);
 
-      return {
-        regularBots: regularBots.map((bot: Config) => ({
-          ...bot,
-          status: "inactive" // Default status
-        })),
-        multiBots: multiBots.map((bot: MultiConfig & { targetAmounts: TargetAmount[] }) => ({
-          ...bot,
-          status: "inactive" // Default status
-        }))
-      };
-    } catch (error) {
-      logger.error(`Error getting all configurations: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error('Failed to get configurations');
-    }
-  }
-
-  async deleteConfig(botId: string) {
-    try {
-      const deletedConfig = await this.prisma.config.delete({
-        where: { botId },
-      });
-      return deletedConfig;
-    } catch (error) {
-      logger.error(`Error deleting configuration: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error("Failed to delete configuration");
-    }
-  }
-
-  async deleteMultiConfig(botId: string) {
-    try {
-      const deletedConfig = await this.prisma.multiConfig.delete({
-        where: { botId },
-      });
-      return deletedConfig;
-    } catch (error) {
-      logger.error(`Error deleting multi-bot configuration: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error("Failed to delete multi-bot configuration");
-    }
-  }
-
-  async updateBotConfig(botId: string, newConfig: Partial<Config>) {
-    try {
-      const updatedBot = await this.prisma.config.update({
-        where: { botId },
-        data: {
-          ...newConfig,
-          stopLossPercentage: this.convertStopLossPercentage(newConfig.stopLossPercentage as bigint | number | null | undefined)
-        },
-      });
-      return updatedBot;
-    } catch (error) {
-      logger.error(`Failed to update bot configuration: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error("Failed to update configuration");
-    }
-  }
-
-  async updateMultiBotConfig(botId: string, newConfig: {
-    initialInputToken?: string;
-    initialInputAmount?: number;
-    targetGainPercentage?: number;
-    stopLossPercentage?: bigint | number;
-    checkInterval?: number;
-    targetAmounts?: Record<string, number>;
-  }) {
-    try {
-      const { targetAmounts, ...configData } = newConfig;
-
-      // Update the multi config
-      const updatedConfig = await this.prisma.multiConfig.update({
-        where: { botId },
-        data: {
-          ...configData,
-          stopLossPercentage: this.convertStopLossPercentage(configData.stopLossPercentage),
-          checkInterval: configData.checkInterval ?? null,
-        },
-        include: {
-          targetAmounts: true,
-        },
-      });
-
-      // If target amounts are provided, update them
-      if (targetAmounts) {
-        // Remove old target amounts
-        await this.prisma.targetAmount.deleteMany({
-          where: { configId: botId }
-        });
-
-        // Add new target amounts
-        const targetAmountEntries = Object.entries(targetAmounts).map(([tokenAddress, amount]) => ({
-          tokenAddress,
-          amount,
-          configId: botId
-        }));
-
-        if (targetAmountEntries.length > 0) {
-          await this.prisma.targetAmount.createMany({
-            data: targetAmountEntries
-          });
-        }
-      }
-
-      return updatedConfig;
-    } catch (error) {
-      logger.error(`Failed to update multi-bot configuration: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error("Failed to update multi-bot configuration");
-    }
-  }
-
-  async getMultiConfig(botId: string): Promise<MultiConfig | null> {
-    try {
-      return await this.prisma.multiConfig.findUnique({
-        where: { botId },
-        include: {
-          targetAmounts: true
-        }
-      });
-    } catch (error) {
-      logger.error(`Error getting multi-config: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error("Failed to get multi-config");
-    }
-  }
-
-  async updateBotStatus(botId: string, status: 'active' | 'inactive'): Promise<void> {
-    try {
-      // Update regular bot status
-      await this.prisma.$executeRaw`
-        UPDATE Config SET status = ${status} WHERE botId = ${botId}
-      `.catch(() => {
-        // If regular bot not found, try updating multi bot
-        return this.prisma.$executeRaw`
-          UPDATE MultiConfig SET status = ${status} WHERE botId = ${botId}
-        `;
-      });
-    } catch (error) {
-      logger.error(`Error updating bot status: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error("Failed to update bot status");
-    }
-  }
-
-  async disconnect() {
-    await this.prisma.$disconnect();
+    return { regularBots, multiBots };
   }
 }

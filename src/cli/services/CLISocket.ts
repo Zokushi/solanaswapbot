@@ -1,71 +1,19 @@
-import { Socket, io } from 'socket.io-client';
+import { io, Socket } from 'socket.io-client';
 import { ENV } from '../../config/index.js';
 import logger from '../../utils/logger.js';
+import { EventBus } from '../../services/eventBus.js';
+import { BotManager } from '../../core/types.js';
 
 export class CLISocket {
   private socket: Socket;
-  private eventHandlers: Map<string, Set<(data: unknown) => void>> = new Map();
+  private eventBus: EventBus;
   private isShuttingDown: boolean = false;
+  private botManager: BotManager;
 
-  constructor() {
-    // Connect to the server using the correct port from ENV
-    this.socket = io(`http://localhost:${ENV.PORT || 4000}`, {
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000
-    });
-
-    // Set up socket event handlers
-    this.socket.on('connect', () => {
-      logger.info('[CLISocket] Connected to server');
-    });
-
-    this.socket.on('disconnect', () => {
-      if (!this.isShuttingDown) {
-        logger.warn('[CLISocket] Disconnected from server');
-      }
-    });
-
-    this.socket.on('error', (error: Error) => {
-      logger.error('[CLISocket] Socket error:', error);
-    });
-
-    // Forward all events from the socket to our handlers
-    this.socket.onAny((event: string, data: unknown) => {
-      const handlers = this.eventHandlers.get(event);
-      if (handlers) {
-        handlers.forEach(callback => callback(data));
-      }
-    });
-
-    // Set up signal handlers
-    this.setupSignalHandlers();
-  }
-
-  private setupSignalHandlers() {
-    const signals = ['SIGINT', 'SIGTERM'] as const;
-    
-    signals.forEach(signal => {
-      process.on(signal, async () => {
-        logger.info(`[CLISocket] Received ${signal} signal`);
-        await this.cleanup();
-        process.exit(0);
-      });
-    });
-
-    // Handle uncaught errors
-    process.on('uncaughtException', async (error) => {
-      logger.error('[CLISocket] Uncaught Exception:', error);
-      await this.cleanup();
-      process.exit(1);
-    });
-
-    process.on('unhandledRejection', async (reason) => {
-      logger.error('[CLISocket] Unhandled Rejection:', reason);
-      await this.cleanup();
-      process.exit(1);
-    });
+  constructor(botManager: BotManager) {
+    this.socket = io(ENV.SOCKET_URL || 'http://localhost:4000');
+    this.eventBus = new EventBus(this.socket);
+    this.botManager = botManager;
   }
 
   async cleanup() {
@@ -75,15 +23,7 @@ export class CLISocket {
     logger.info('[CLISocket] Starting cleanup...');
 
     try {
-      // Remove all event listeners
-      this.eventHandlers.clear();
-      
-      // Disconnect the socket
-      if (this.socket.connected) {
-        logger.info('[CLISocket] Disconnecting socket...');
-        this.socket.disconnect();
-      }
-
+      this.eventBus.disconnect();
       logger.info('[CLISocket] Cleanup complete');
     } catch (error) {
       logger.error('[CLISocket] Error during cleanup:', error);
@@ -96,21 +36,15 @@ export class CLISocket {
       logger.warn('[CLISocket] Attempted to emit event during shutdown:', event);
       return;
     }
-    this.socket.emit(event, data);
+    this.eventBus.emit(event, data);
   }
 
   on(event: string, callback: (data: unknown) => void) {
-    if (!this.eventHandlers.has(event)) {
-      this.eventHandlers.set(event, new Set());
-    }
-    this.eventHandlers.get(event)!.add(callback);
+    this.eventBus.on(event as any, callback);
   }
 
   off(event: string, callback: (data: unknown) => void) {
-    const handlers = this.eventHandlers.get(event);
-    if (handlers) {
-      handlers.delete(callback);
-    }
+    this.eventBus.off(event as any, callback);
   }
 
   disconnect() {
@@ -119,5 +53,35 @@ export class CLISocket {
 
   getSocket(): Socket {
     return this.socket;
+  }
+
+  getEventBus(): EventBus {
+    return this.eventBus;
+  }
+
+  async startBot(botId: string, type: 'regular' | 'multi'): Promise<void> {
+    try {
+      const config = await this.botManager.getConfig(botId, type);
+      if (!config) {
+        throw new Error(`No configuration found for bot ${botId}`);
+      }
+
+      if (type === 'multi') {
+        await this.botManager.startMultiBot(config, this.socket);
+      } else {
+        await this.botManager.startBot(config, this.socket);
+      }
+    } catch (error) {
+      logger.error(`[CLISocket] Failed to start bot ${botId}:`, error);
+      throw error;
+    }
+  }
+
+  async stopBot(botId: string): Promise<void> {
+    await this.botManager.stopBot(botId);
+  }
+
+  async deleteConfig(botId: string, type: 'regular' | 'multi'): Promise<void> {
+    await this.botManager.deleteConfig(botId, type);
   }
 } 

@@ -20,7 +20,6 @@ export class DefaultBotManager implements BotManager {
     this.configService = new ConfigService();
   }
 
-
   private async initializeBot(config: Partial<TradeBotConfig>, socket: Socket): Promise<TradeBot> {
     const solanaEndpoint: string = ENV.solanaEndpoint!;
     const wallet: string = ENV.wallet!;
@@ -91,7 +90,6 @@ export class DefaultBotManager implements BotManager {
       throw new Error('Missing or invalid required config fields');
     }
 
-    const inputToken = await getTokenDecimalsByName(config.initialInputToken);
     const tokenIn = await getTokenAddressByName(config.initialInputToken);
     // Store the raw amount without decimal multiplication
     const initialInputAmount = Number(config.initialInputAmount);
@@ -100,7 +98,6 @@ export class DefaultBotManager implements BotManager {
     if (config.targetAmounts) {
       for (const [tokenName, amount] of Object.entries(config.targetAmounts)) {
         try {
-          const token = await getTokenDecimalsByName(tokenName);
           const tokenAddress = await getTokenAddressByName(tokenName);
           // Store target amounts in raw form without decimal multiplication
           targetAmounts[tokenAddress] = Number(amount);
@@ -143,8 +140,7 @@ export class DefaultBotManager implements BotManager {
       if (!config.botId) {
         throw new Error('botId is required');
       }
-      const bot = await this.initializeBot({ ...config, botId: config.botId }, socket);
-      await this.configService.updateBotStatus(config.botId, 'active');
+      await this.initializeBot({ ...config, botId: config.botId }, socket);
     } catch (error) {
       console.error('Failed to start bot:', error);
       throw error;
@@ -156,8 +152,7 @@ export class DefaultBotManager implements BotManager {
       if (!config.botId) {
         throw new Error('botId is required');
       }
-      const bot = await this.initializeMultiBot({ ...config, botId: config.botId }, socket);
-      await this.configService.updateBotStatus(config.botId, 'active');
+      await this.initializeMultiBot({ ...config, botId: config.botId }, socket);
     } catch (error) {
       console.error('Failed to start multi bot:', error);
       throw error;
@@ -169,14 +164,71 @@ export class DefaultBotManager implements BotManager {
     if (bot) {
       bot.terminateSession();
       this.activeBots.delete(botId);
-      await this.configService.updateBotStatus(botId, 'inactive');
     }
 
     const multiBot = this.activeMultiBots.get(botId);
     if (multiBot) {
       multiBot.terminateSession();
       this.activeMultiBots.delete(botId);
-      await this.configService.updateBotStatus(botId, 'inactive');
+    }
+  }
+
+  public async getAllBots(): Promise<{
+    regularBots: (Partial<Config> & { botId: string; status: string })[];
+    multiBots: (MultiConfig & { botId: string; status: string; targetAmounts: TargetAmount[] })[];
+  }> {
+    const { regularBots, multiBots } = await this.configService.getAllConfigs();
+    
+    // Get all bot IDs from the active maps
+    const activeRegularBotIds = new Set(this.activeBots.keys());
+    const activeMultiBotIds = new Set(this.activeMultiBots.keys());
+
+    return this.serializeForSocket({
+      regularBots: regularBots.map(bot => ({
+        ...bot,
+        status: activeRegularBotIds.has(bot.botId) ? 'running' : 'stopped'
+      })),
+      multiBots: multiBots.map(bot => ({
+        ...bot,
+        status: activeMultiBotIds.has(bot.botId) ? 'running' : 'stopped'
+      }))
+    });
+  }
+
+  public async deleteConfig(botId: string, type: 'regular' | 'multi'): Promise<void> {
+    try {
+      if (type === 'regular') {
+        await this.configService.deleteConfig(botId);
+      } else {
+        await this.configService.deleteMultiConfig(botId);
+      }
+    } catch (error) {
+      logger.error(`Error deleting configuration: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('Failed to delete configuration');
+    }
+  }
+
+  public async updateBotConfig(botId: string, config: Partial<TradeBotConfig>): Promise<void> {
+    try {
+      // First stop the bot if it's running
+      await this.stopBot(botId);
+      // Update the configuration
+      await this.configService.updateBotConfig(botId, config);
+    } catch (error) {
+      logger.error(`Error updating bot configuration: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('Failed to update configuration');
+    }
+  }
+
+  public async updateMultiBotConfig(botId: string, config: Partial<MultiBotConfig>): Promise<void> {
+    try {
+      // First stop the bot if it's running
+      await this.stopBot(botId);
+      // Update the configuration
+      await this.configService.updateMultiBotConfig(botId, config);
+    } catch (error) {
+      logger.error(`Error updating multi-bot configuration: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('Failed to update multi-bot configuration');
     }
   }
 
@@ -228,88 +280,10 @@ export class DefaultBotManager implements BotManager {
       });
     }
 
-    // If bot is not found in either activeBots or activeMultiBots, return an empty object with botId and status 'inactive'
     return this.serializeForSocket({
       botId,
-      status: 'inactive'
+      status: 'stopped'
     });
-  }
-
-  public async getAllBots(): Promise<{
-    regularBots: (Partial<Config> & { botId: string; status: string })[];
-    multiBots: (MultiConfig & { botId: string; status: string; targetAmounts: TargetAmount[] })[];
-  }> {
-    const { regularBots, multiBots } = await this.configService.getAllConfigs();
-    return this.serializeForSocket({
-      regularBots: regularBots.map(bot => ({
-        ...bot,
-        status: this.activeBots.has(bot.botId) ? 'active' : 'inactive'
-      })),
-      multiBots: multiBots.map(bot => ({
-        ...bot,
-        status: this.activeMultiBots.has(bot.botId) ? 'active' : 'inactive'
-      }))
-    });
-  }
-
-  public async getConfigs() {
-    const { regularBots, multiBots } = await this.configService.getAllConfigs();
-    return this.serializeForSocket({
-      regularBots: regularBots.map((bot: Config) => ({
-        ...bot,
-        status: this.activeBots.has(bot.botId) ? 'active' : 'inactive'
-      })),
-      multiBots: multiBots.map((bot: MultiConfig & { targetAmounts: TargetAmount[] }) => ({
-        ...bot,
-        status: this.activeMultiBots.has(bot.botId) ? 'active' : 'inactive'
-      }))
-    });
-  }
-
-  public async deleteConfig(botId: string, type: 'regular' | 'multi'): Promise<void> {
-    try {
-      if (type === 'regular') {
-        await this.configService.deleteConfig(botId);
-      } else {
-        await this.configService.deleteMultiConfig(botId);
-      }
-    } catch (error) {
-      logger.error(`Error deleting configuration: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error('Failed to delete configuration');
-    }
-  }
-
-  public async updateBotConfig(botId: string, config: Partial<TradeBotConfig>): Promise<void> {
-    try {
-      // First stop the bot if it's running
-      await this.stopBot(botId);
-      // Update the configuration, ensuring stopLossPercentage is a number or null if present
-      const configToUpdate = { 
-        ...config, 
-        stopLossPercentage: config.stopLossPercentage !== undefined 
-          ? config.stopLossPercentage === null 
-            ? null 
-            : Number(config.stopLossPercentage) 
-          : config.stopLossPercentage 
-      };
-      await this.configService.updateBotConfig(botId, configToUpdate);
-    } catch (error) {
-      logger.error(`Error updating bot configuration: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error('Failed to update configuration');
-    }
-  }
-
-  public async updateMultiBotConfig(botId: string, config: Partial<MultiBotConfig>): Promise<void> {
-    try {
-      // First stop the bot if it's running
-      await this.stopBot(botId);
-      
-      // Update the configuration
-      await this.configService.updateMultiBotConfig(botId, config);
-    } catch (error) {
-      logger.error(`Error updating multi-bot configuration: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error('Failed to update multi-bot configuration');
-    }
   }
 } 
 

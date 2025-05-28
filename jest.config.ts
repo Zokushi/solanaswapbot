@@ -1,24 +1,25 @@
-// jest.config.ts
 import type { Config } from 'jest';
 
 const config: Config = {
-  preset: 'ts-jest/presets/js-with-ts-esm',
+  preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/__tests__'],
-  testMatch: ['**/__tests__/**/*.test.ts', '**/*.test.ts'],
-  moduleFileExtensions: ['ts', 'js', 'json', 'node'],
-  extensionsToTreatAsEsm: ['.ts'],
-  transform: {
-    '^.+\\.ts$': ['ts-jest', { useESM: true }],
-  },
-  // Ensure CommonJS dependencies are handled
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
   moduleNameMapper: {
-    '^axios$': '<rootDir>/node_modules/axios/dist/axios.min.js',
-    '^(\\.{1,2}/.*)\\.js$': '$1', // Strip .js extensions for ESM imports
+    '^(\\.{1,2}/.*)\\.js$': '$1',
   },
-    "resolver": undefined,
-  // Enable source maps for better debugging
-  transformIgnorePatterns: [],
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', {
+      useESM: true,
+    }],
+  },
+  transformIgnorePatterns: [
+    '/node_modules/(?!(ink-testing-library)/)'
+  ],
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  // Enable experimental VM modules
+  testEnvironmentOptions: {
+    nodeOptions: ['--experimental-vm-modules']
+  }
 };
 
-export default config;
+export default config; 

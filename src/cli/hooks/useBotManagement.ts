@@ -1,6 +1,8 @@
 import React from 'react';
 import { DefaultBotManager } from '../../core/botManager.js';
 import { CLISocket } from '../services/CLISocket.js';
+import logger from '../../utils/logger.js';
+import { getTokenName } from '../../utils/helper.js';
 
 export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocket) => {
   const [activeBots, setActiveBots] = React.useState<{
@@ -26,16 +28,16 @@ export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocke
     try {
       const allBots = await botManager.getAllBots();
       setActiveBots({
-        regularBots: allBots.regularBots.filter(bot => bot.status === 'active').map(bot => ({
-          botId: bot.botId,
-          status: bot.status
+        regularBots: allBots.regularBots.filter(bot => bot.status === 'running').map(bot => ({
+          ...bot,
+          type: 'regular' as const
         })),
-        multiBots: allBots.multiBots.filter(bot => bot.status === 'active').map(bot => ({
-          botId: bot.botId,
-          status: bot.status
+        multiBots: allBots.multiBots.filter(bot => bot.status === 'running').map(bot => ({
+          ...bot,
+          type: 'multi' as const
         }))
       });
-      return [...allBots.regularBots, ...allBots.multiBots].filter(bot => bot.status === 'active');
+      return [...allBots.regularBots, ...allBots.multiBots].filter(bot => bot.status === 'running');
     } catch (error) {
       console.error('Failed to check active bots:', error);
       return [];
@@ -90,7 +92,7 @@ export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocke
   const handleStartAllBots = React.useCallback(async () => {
     try {
       const { regularBots, multiBots } = await botManager.getAllBots();
-      const inactiveBots = [...regularBots, ...multiBots].filter(bot => bot.status === 'inactive');
+      const inactiveBots = [...regularBots, ...multiBots].filter(bot => bot.status === 'stopped');
 
       if (inactiveBots.length === 0) {
         setStartingProgress({
@@ -115,17 +117,23 @@ export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocke
           if ('targetAmounts' in bot) {
             // Handle multi bot
             const targetAmounts: Record<string, number> = {};
-            for (const target of bot.targetAmounts) {
-              targetAmounts[target.tokenAddress] = target.amount;
+            if (Array.isArray(bot.targetAmounts)) {
+              for (const target of bot.targetAmounts) {
+                // Convert token address to name
+                const tokenName = await getTokenName(target.tokenAddress);
+                targetAmounts[tokenName] = Number(target.amount);
+              }
+            } else if (typeof bot.targetAmounts === 'object') {
+              Object.assign(targetAmounts, bot.targetAmounts);
             }
 
             await botManager.startMultiBot({
               botId: bot.botId,
               initialInputToken: bot.initialInputToken,
-              initialInputAmount: bot.initialInputAmount,
-              targetGainPercentage: bot.targetGainPercentage,
-              stopLossPercentage: bot.stopLossPercentage ?? undefined,
-              checkInterval: bot.checkInterval ?? undefined,
+              initialInputAmount: Number(bot.initialInputAmount),
+              targetGainPercentage: Number(bot.targetGainPercentage),
+              stopLossPercentage: bot.stopLossPercentage ? Number(bot.stopLossPercentage) : undefined,
+              checkInterval: bot.checkInterval ? Number(bot.checkInterval) : undefined,
               targetAmounts
             }, socket.getSocket());
           } else {
@@ -133,10 +141,10 @@ export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocke
             await botManager.startBot({
               botId: bot.botId,
               initialInputToken: bot.initialInputToken,
-              initialInputAmount: bot.initialInputAmount,
-              firstTradePrice: bot.firstTradePrice,
-              targetGainPercentage: bot.targetGainPercentage,
-              stopLossPercentage: bot.stopLossPercentage ? BigInt(bot.stopLossPercentage.toString()) : undefined,
+              initialInputAmount: Number(bot.initialInputAmount),
+              firstTradePrice: bot.firstTradePrice ? Number(bot.firstTradePrice) : undefined,
+              targetGainPercentage: Number(bot.targetGainPercentage),
+              stopLossPercentage: bot.stopLossPercentage ? Number(bot.stopLossPercentage) : undefined,
               initialOutputToken: bot.initialOutputToken
             }, socket.getSocket());
           }
@@ -147,7 +155,13 @@ export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocke
             message: `Starting bot ${i + 1} of ${inactiveBots.length}...`
           }));
         } catch (error) {
-          console.error(`Failed to start bot ${bot.botId}:`, error);
+          logger.error(`Failed to start bot ${bot.botId}:`, error);
+          setStartingProgress(prev => ({
+            ...prev,
+            status: 'error',
+            message: `Failed to start bot ${bot.botId}: ${error instanceof Error ? error.message : String(error)}`
+          }));
+          return;
         }
       }
 
@@ -157,6 +171,7 @@ export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocke
         message: `Successfully started ${inactiveBots.length} bots`
       }));
     } catch (error) {
+      logger.error('Failed to start all bots:', error);
       setStartingProgress({
         current: 0,
         total: 0,

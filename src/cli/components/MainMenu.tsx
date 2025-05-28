@@ -7,30 +7,31 @@ interface MainMenuProps {
 }
 
 export const MainMenu: React.FC<MainMenuProps> = ({ selectedOption, options }) => {
+  const getOptionColor = (option: string, isSelected: boolean) => {
+    if (isSelected) return 'magentaBright'; // Selected option is bright magenta
+    
+    if (option === 'Exit') return 'magentaBright';
+    if (option === 'Stop All Bots') return 'magentaBright';
+    if (option === 'Start All Bots') return 'magentaBright';
+    if (option === 'View All Configs') return 'magentaBright';
+    if (option === 'Add New Config' || option === 'Add Multi Config') return 'magentaBright';
+    
+    return 'whiteBright'; // Default color for better readability
+  };
+
   return (
     <Box flexDirection="column">
       <Box marginTop={2}>
-        <Text color="blue">Use ↑↓ arrows to select an option and Enter to confirm</Text>
+        <Text color="whiteBright">Use ↑↓ arrows to select an option and Enter to confirm</Text>
       </Box>
       <Box marginTop={1} flexDirection="column">
         {options.map((option, index) => {
-          let color = 'white';
-          if (index === selectedOption) {
-            color = 'cyan';
-          } else if (option === 'Stop All Bots') {
-            color = 'cyan';
-          } else if (option === 'Start All Bots') {
-            color = 'cyan';
-          } else if (option === 'Exit') {
-            color = 'cyan';
-          } else if (option === 'View All Configs') {
-            color = 'cyan';
-          } else if (option === 'Add New Config' || option === 'Add Multi Config') {
-            color = 'cyan';
-          }
+          const isSelected = index === selectedOption;
+          const color = getOptionColor(option, isSelected);
+          
           return (
             <Text key={option} color={color}>
-              {index === selectedOption ? '> ' : '  '}{option}
+              {isSelected ? '> ' : '  '}{option}
             </Text>
           );
         })}

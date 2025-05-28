@@ -1,11 +1,12 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
-import { ConfigService } from '../../services/configService.js';
 import TokenSelector from '../components/TokenSelector.js';
-import { v4 as uuidv4 } from 'uuid';
 import { RegularBotFormProps } from '../../core/types.js';
+import { useAppContext } from '../context/AppContext.js';
+import { RegularBotService } from '../../services/regularBotService.js';
 
-const RegularBotForm: React.FC<RegularBotFormProps> = ({ onComplete, botManager, socket, editingConfig }) => {
+export const RegularBotForm: React.FC<RegularBotFormProps> = ({ onComplete, editingConfig }) => {
+  const { botManager, cliSocket } = useAppContext();
   const [currentField, setCurrentField] = React.useState(0);
   const [inputValue, setInputValue] = React.useState('');
   const [formData, setFormData] = React.useState({
@@ -39,7 +40,7 @@ const RegularBotForm: React.FC<RegularBotFormProps> = ({ onComplete, botManager,
     { name: 'initialInputAmount', label: 'Input Amount', type: 'number' },
     { name: 'firstTradePrice', label: 'First Trade Price', type: 'number' },
     { name: 'targetGainPercentage', label: 'Target Gain %', type: 'number' },
-    { name: 'stopLossPercentage (Optional)', label: 'Stop Loss %', type: 'number' }
+    { name: 'stopLossPercentage', label: 'Stop Loss % (Optional)', type: 'number' }
   ];
 
   const handleTokenSelect = (token: { address: string; symbol: string; name: string }) => {
@@ -154,7 +155,7 @@ const RegularBotForm: React.FC<RegularBotFormProps> = ({ onComplete, botManager,
         firstTradePrice: parseFloat(formData.firstTradePrice),
         targetGainPercentage: parseFloat(formData.targetGainPercentage),
         stopLossPercentage: formData.stopLossPercentage ? 
-          BigInt(Math.floor(parseFloat(formData.stopLossPercentage) * 100)) : 
+          (Math.floor(parseFloat(formData.stopLossPercentage) * 100)) : 
           undefined
       };
 
@@ -162,8 +163,9 @@ const RegularBotForm: React.FC<RegularBotFormProps> = ({ onComplete, botManager,
         // Update existing config
         await botManager.updateBotConfig(config.botId, config);
       } else {
-        // Create new config
-        await botManager.startBot(config, socket);
+        // Create new config without starting the bot
+        const regularBotService = new RegularBotService();
+        await regularBotService.addConfig(config);
       }
 
       onComplete();
@@ -184,7 +186,11 @@ const RegularBotForm: React.FC<RegularBotFormProps> = ({ onComplete, botManager,
         {fields.map((field, index) => (
           <Box key={field.name}>
             <Text color={index === currentField ? 'green' : 'white'}>
-              {field.label}: {index === currentField ? inputValue : formData[field.name as keyof typeof formData] || ''}
+              {field.label}: {
+                index === currentField 
+                  ? inputValue 
+                  : formData[field.name as keyof typeof formData] || ''
+              }
             </Text>
           </Box>
         ))}

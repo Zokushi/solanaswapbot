@@ -1,5 +1,5 @@
 import winston from 'winston';
-import colors from 'colors';
+import chalk from 'chalk';  
 import { TradeBotError } from './error.js';
 import path from 'path';
 import fs from 'fs';

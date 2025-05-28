@@ -17,7 +17,7 @@ import { ConfigService } from "../services/configService.js";
 export class TradeBot {
   // Public properties
   public readonly botId: string;
-  public status: BotStatus = 'inactive';
+  public status: BotStatus = 'stopped';
   public difference: number;
   public ratio: number;
   public currentTrade: number;
@@ -25,7 +25,7 @@ export class TradeBot {
   public outputTokenAccount: Address;
   public firstTradePrice: number;
   public targetGainPercentage: number | undefined;
-  public stopLossPercentage: bigint | undefined;
+  public stopLossPercentage: number | undefined;
   public nextTrade: NextTrade;
   public tradeCounter: number;
 
@@ -42,7 +42,6 @@ export class TradeBot {
   private stopped: boolean;
   private waitingForConfirmation: boolean = false;
   public configService: ConfigService;
-  private monitorInterval?: NodeJS.Timeout;
 
   constructor(config: TradeBotConfig, socket: Socket) {
     if (!config.rpc) {
@@ -65,7 +64,7 @@ export class TradeBot {
     this.outputTokenAccount = config.initialOutputToken as Address;
     this.firstTradePrice = config.firstTradePrice;
     this.tradeCounter = 0;
-    this.stopLossPercentage = config.stopLossPercentage || undefined;
+    this.stopLossPercentage = config.stopLossPercentage;
     this.stopped = false;
     this.checkInterval = config.checkInterval || 20000;
     this.lastCheck = 0;
@@ -135,7 +134,7 @@ export class TradeBot {
       try {
         const timeout = setTimeout(() => {
           throw new Error("Quote fetch timed out");
-        }, 10000);
+        }, 15000);
         logger.debug(`Bot ID: ${this.botId} - calling getQuote()`);
         const quote = await this.tradeService.getQuote2(this.nextTrade);
         clearTimeout(timeout);
@@ -183,7 +182,7 @@ export class TradeBot {
     this.difference = diff;
     this.currentTrade = currentPriceWithDecimals;
 
-    if (this.stopLossPercentage && diff < -Number(this.stopLossPercentage)) {
+    if (this.stopLossPercentage && diff < -this.stopLossPercentage) {
       this.notificationService.log(`Bot ID: ${this.botId} - Stop loss triggered at ${currentPriceWithDecimals}. Terminating.`, this.botId);
       this.terminateSession();
       return;
@@ -193,7 +192,7 @@ export class TradeBot {
     const outputName = await getTokenName(this.nextTrade.outputMint);
     const botData: BotData = {
       botId: this.botId,
-      status: this.stopped ? "Stopped" : "Running",
+      status: this.stopped ? "stopped" : "running",
       inputMint: inputName,
       outputMint: outputName,
       currentPrice: this.currentTrade,
@@ -205,7 +204,7 @@ export class TradeBot {
     };
 
     // Emit the bot data to update the dashboard
-    this.emit('bot:difference', botData);
+    this.notificationService.emit(this.socket, 'bot:difference', botData);
   }
 
   /**
@@ -216,27 +215,50 @@ export class TradeBot {
    * @private
    */
   private async updateNextTrade(lastTrade: QuoteResponse): Promise<void> {
+    // Convert string amounts to BigInt for precise calculations
     const inLamports = BigInt(lastTrade.inAmount);
+    const outLamports = BigInt(lastTrade.outAmount);
+    
     if (!this.targetGainPercentage || this.targetGainPercentage <= 0) {
       throw new Error(`Bot ID: ${this.botId} - Invalid target gain percentage: ${this.targetGainPercentage}`);
     }
 
-    const targetGainLamports = inLamports * BigInt(Math.floor(this.targetGainPercentage * 100)) / BigInt(10000);
-    const currentGainLamports = BigInt(lastTrade.outAmount) - inLamports;
+    // Convert target gain percentage to a decimal (e.g., 1% -> 0.01)
+    const targetGainDecimal = this.targetGainPercentage / 100;
+    
+    // Calculate target gain in lamports with more precision
+    // Multiply by 10000 to maintain 4 decimal places of precision
+    const targetGainLamports = (inLamports * BigInt(Math.floor(targetGainDecimal * 10000))) / BigInt(10000);
+    
+    // Calculate current gain in lamports
+    const currentGainLamports = outLamports - inLamports;
 
-    if (currentGainLamports >= targetGainLamports) {
-      this.notificationService.log(`Bot ID: ${this.botId} - Target gain reached! Stopping bot.`, this.botId);
-      this.terminateSession();
-      return;
-    }
+    logger.info(`Bot ID: ${this.botId} - Trade Analysis:
+      Input Amount: ${inLamports.toString()}
+      Output Amount: ${outLamports.toString()}
+      Current Gain: ${currentGainLamports.toString()}
+      Target Gain: ${targetGainLamports.toString()}
+      Target Percentage: ${this.targetGainPercentage}%`);
 
+    // Update next trade with the output amount from last trade
+    // Reverse the trade direction and use the output amount as the new input amount
     this.nextTrade = {
-      inputMint: this.nextTrade.outputMint,
-      outputMint: this.nextTrade.inputMint,
-      amount: parseInt(lastTrade.outAmount),
+      inputMint: lastTrade.outputMint,  // Use the output token as the new input
+      outputMint: lastTrade.inputMint,  // Use the input token as the new output
+      amount: Number(outLamports),      // Use the output amount as the new input amount
       swapMode: "ExactIn",
     };
-    this.firstTradePrice = Number(inLamports + targetGainLamports);
+
+    // Calculate new target price for next trade
+    // Target price should be the input amount plus the target gain
+    const newTargetPrice = inLamports + targetGainLamports;
+    this.firstTradePrice = Number(newTargetPrice);
+
+    logger.info(`Bot ID: ${this.botId} - Next Trade Setup:
+      Input Mint: ${this.nextTrade.inputMint}
+      Output Mint: ${this.nextTrade.outputMint}
+      Amount: ${this.nextTrade.amount}
+      New Target Price: ${this.firstTradePrice}`);
   }
 
   /**
@@ -304,119 +326,4 @@ export class TradeBot {
     }
     this.notificationService.log(`Bot ID: ${this.botId} - Bot terminated successfully`, this.botId);
   }
-
-  private serializeForSocket(data: any): any {
-    if (data === null || data === undefined) {
-      return data;
-    }
-    
-    if (typeof data === 'bigint') {
-      return data.toString();
-    }
-    
-    if (Array.isArray(data)) {
-      return data.map(this.serializeForSocket.bind(this));
-    }
-    
-    if (typeof data === 'object') {
-      const result: any = {};
-      for (const [key, value] of Object.entries(data)) {
-        result[key] = this.serializeForSocket(value);
-      }
-      return result;
-    }
-    
-    return data;
-  }
-
-  private emit(event: string, data: any) {
-    this.socket.emit(event, this.serializeForSocket(data));
-  }
-
-  async start(): Promise<void> {
-    if (this.status === 'Running') {
-      throw new Error('Bot is already running');
-    }
-
-    if (!this.inputTokenAccount || !this.nextTrade.amount) {
-      throw new Error('Missing required configuration: initialInputToken or initialInputAmount');
-    }
-
-    try {
-      this.status = 'Running';
-      this.socket.emit('botStatus', { botId: this.botId, status: this.status });
-      
-      this.monitorInterval = setInterval(async () => {
-        try {
-          await this.checkAndExecute();
-        } catch (error) {
-          logger.error(`Error in monitor interval: ${error}`);
-          this.socket.emit('error', { 
-            botId: this.botId, 
-            message: `Monitor error: ${error instanceof Error ? error.message : String(error)}` 
-          });
-        }
-      }, this.checkInterval || 60000);
-    } catch (error) {
-      this.status = 'Stopped';
-      this.socket.emit('botStatus', { botId: this.botId, status: this.status });
-      throw error;
-    }
-  }
-
-  async stop(): Promise<void> {
-    if (this.status !== 'Running') {
-      throw new Error('Bot is not running');
-    }
-
-    try {
-      if (this.monitorInterval) {
-        clearInterval(this.monitorInterval);
-        this.monitorInterval = undefined;
-      }
-      this.status = 'Stopped';
-      this.socket.emit('botStatus', { botId: this.botId, status: this.status });
-    } catch (error) {
-      this.status = 'Stopped';
-      this.socket.emit('botStatus', { botId: this.botId, status: this.status });
-      throw error;
-    }
-  }
-
-  private async checkAndExecute(): Promise<void> {
-    try {
-      const currentBalance = await this.getCurrentBalance();
-      const gainPercentage = ((currentBalance - this.firstTradePrice) / this.firstTradePrice) * 100;
-
-      if (this.targetGainPercentage && gainPercentage >= this.targetGainPercentage) {
-        await this.executeTrade();
-        await this.stop();
-      } else if (this.stopLossPercentage && gainPercentage <= -Number(this.stopLossPercentage)) {
-        logger.warn(`Stop loss triggered at ${gainPercentage}% loss`);
-        await this.stop();
-      }
-    } catch (error) {
-      logger.error(`Error in checkAndExecute: ${error}`);
-      this.socket.emit('error', { 
-        botId: this.botId, 
-        message: `Trade check error: ${error instanceof Error ? error.message : String(error)}` 
-      });
-      throw error;
-    }
-  }
-
-  private async getCurrentBalance(): Promise<number> {
-    // Implementation of getCurrentBalance
-    return 0;
-  }
-
-  private async executeTrade(): Promise<void> {
-    // Implementation of executeTrade
-  }
-}
-
-export interface NewConfig {
-  botId: string;
-  // ...
-  stopLossPercentage?: bigint; // undefined if not set
 }

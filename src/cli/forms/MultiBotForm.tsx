@@ -1,16 +1,18 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
-import { ConfigService } from '../../services/configService.js';
 import TokenSelector from '../components/TokenSelector.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MultiBotFormProps } from '../../core/types.js';
+import { useAppContext } from '../context/AppContext.js';
+import { MultiBotService } from '../../services/multiBotService.js';
 
 interface TargetAmount {
   token: { name: string; symbol: string };
   amount: string;
 }
 
-const MultiBotForm = ({ onComplete }: MultiBotFormProps) => {
+export const MultiBotForm = ({ onComplete, editingConfig }: MultiBotFormProps) => {
+  const { botManager, cliSocket } = useAppContext();
   const [currentField, setCurrentField] = React.useState(0);
   const [inputValue, setInputValue] = React.useState('');
   const [error, setError] = React.useState('');
@@ -57,10 +59,12 @@ const MultiBotForm = ({ onComplete }: MultiBotFormProps) => {
       }));
     }
     setShowTokenSelector(false);
+    setInputValue('');
   };
 
   const handleTokenCancel = () => {
     setShowTokenSelector(false);
+    setInputValue('');
   };
 
   const handleSubmit = async () => {
@@ -71,16 +75,24 @@ const MultiBotForm = ({ onComplete }: MultiBotFormProps) => {
       });
 
       const botId = uuidv4();
-      const configService = new ConfigService();
-      await configService.addMultiConfig({
+      const config = {
         botId,
-        initialInputToken: formData.initialInputToken.address,
+        initialInputToken: formData.initialInputToken.name,
         initialInputAmount: Number(formData.initialInputAmount),
         targetGainPercentage: Number(formData.targetGainPercentage),
         stopLossPercentage: formData.stopLossPercentage ? Number(formData.stopLossPercentage) : undefined,
         checkInterval: formData.checkInterval ? Number(formData.checkInterval) : undefined,
         targetAmounts: targetAmountsRecord
-      });
+      };
+
+      if (editingConfig) {
+        // Update existing config
+        await botManager.updateBotConfig(config.botId, config);
+      } else {
+        // Create new config without starting the bot
+        const multiBotService = new MultiBotService();
+        await multiBotService.addConfig(config);
+      }
 
       onComplete();
     } catch (err) {
@@ -89,6 +101,8 @@ const MultiBotForm = ({ onComplete }: MultiBotFormProps) => {
   };
 
   useInput((input, key) => {
+    if (showTokenSelector) return;
+
     if (key.escape) {
       onComplete();
       return;
@@ -108,14 +122,24 @@ const MultiBotForm = ({ onComplete }: MultiBotFormProps) => {
       if (currentField === fields.length) {
         setInputValue(currentTargetAmount.amount);
       } else {
-        setInputValue(String(formData[fields[currentField].name as keyof typeof formData]));
+        const field = fields[currentField - 1];
+        if (field && field.type === 'token') {
+          setInputValue(formData.initialInputToken.symbol || '');
+        } else if (field) {
+          setInputValue(formData[field.name as keyof typeof formData] as string || '');
+        }
       }
     } else if (key.downArrow) {
       setCurrentField(prev => (prev < fields.length ? prev + 1 : prev));
       if (currentField === fields.length) {
         setInputValue(currentTargetAmount.amount);
       } else {
-        setInputValue(String(formData[fields[currentField].name as keyof typeof formData]));
+        const field = fields[currentField + 1];
+        if (field && field.type === 'token') {
+          setInputValue(formData.initialInputToken.symbol || '');
+        } else if (field) {
+          setInputValue(formData[field.name as keyof typeof formData] as string || '');
+        }
       }
     } else if (key.return) {
       if (currentField === fields.length) {
@@ -137,10 +161,11 @@ const MultiBotForm = ({ onComplete }: MultiBotFormProps) => {
         setInputValue('');
       } else {
         const field = fields[currentField];
-        if (field.type === 'token') {
+        if (field && field.type === 'token') {
           setShowTokenSelector(true);
-        } else {
+        } else if (field) {
           setFormData(prev => ({ ...prev, [field.name]: inputValue }));
+          setInputValue('');
         }
       }
     } else {
@@ -168,6 +193,30 @@ const MultiBotForm = ({ onComplete }: MultiBotFormProps) => {
     }
   });
 
+  // Initialize form with editing config if provided
+  React.useEffect(() => {
+    if (editingConfig) {
+      setFormData({
+        initialInputToken: editingConfig.initialInputToken || { address: '', name: '', symbol: '' },
+        botId: editingConfig.botId || '',
+        initialInputAmount: editingConfig.amount?.toString() || '',
+        targetGainPercentage: editingConfig.targetGainPercentage?.toString() || '',
+        stopLossPercentage: editingConfig.stopLossPercentage?.toString() || '',
+        checkInterval: editingConfig.checkInterval?.toString() || '',
+        targetAmounts: {} // Initialize with empty object, will be populated from targetAmounts state
+      });
+
+      // Convert target amounts to the correct format
+      if (editingConfig.targetAmounts) {
+        const targetAmountsArray = Object.entries(editingConfig.targetAmounts).map(([tokenName, amount]) => ({
+          token: { name: tokenName, symbol: tokenName },
+          amount: (amount as number).toString()
+        }));
+        setTargetAmounts(targetAmountsArray);
+      }
+    }
+  }, [editingConfig]);
+
   if (showTokenSelector) {
     return <TokenSelector onSelect={handleTokenSelect} onCancel={handleTokenCancel} />;
   }
@@ -183,13 +232,17 @@ const MultiBotForm = ({ onComplete }: MultiBotFormProps) => {
             {field.label}: {
               field.type === 'token' 
                 ? formData.initialInputToken.symbol || 'Select token'
-                : String(formData[field.name as keyof typeof formData])
+                : currentField === index 
+                  ? inputValue 
+                  : (formData[field.name as keyof typeof formData] as string) || ''
             }
           </Text>
         </Box>
       ))}
 
       {/* Target Amounts */}
+      <Box marginTop={1} flexDirection="column">
+        <Text color="cyan">Target Amounts:</Text>
         {targetAmounts.map((target, index) => (
           <Text key={index} color="green">
             {target.token.symbol}: {target.amount}
@@ -200,6 +253,7 @@ const MultiBotForm = ({ onComplete }: MultiBotFormProps) => {
             Add Target: {currentTargetAmount.token.symbol || 'Select token'} {currentTargetAmount.amount ? `Amount: ${currentTargetAmount.amount}` : ''}
           </Text>
         </Box>
+      </Box>
 
       {/* Instructions */}
       <Box marginTop={2}>

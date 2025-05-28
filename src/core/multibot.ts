@@ -1,4 +1,4 @@
-import { QuoteResponse, BotData, MultiBotConfig } from "./types.js";
+import { QuoteResponse, BotData, MultiBotConfig, BotStatus } from "./types.js";
 import logger from "../utils/logger.js";
 import { address, Address, createSolanaRpcSubscriptions, getAddressFromPublicKey, Rpc, SolanaRpcApiMainnet } from "@solana/kit";
 import { getTokenDecimalsByAddress, getTokenDecimalsByAddressRaw, getTokenName } from "../utils/helper.js";
@@ -14,12 +14,12 @@ import { Socket } from "socket.io-client";
 export class MultiBot {
   // Public properties
   public readonly botId: string;
-  public status: BotStatus;
+  public status: BotStatus = 'stopped';
   public difference: number;
   public ratio: number;
   public currentTrade: number;
   public currentMint: Address;
-  public currentTokenAccount: Address;
+  public currentTokenAccount!: Address;
   public initialBalance: number;
   public targetAmounts: Record<string, number>;
   public targetGainPercentage: number;
@@ -58,7 +58,7 @@ export class MultiBot {
     this.difference = 0;
     this.currentTrade = 0;
     this.ratio = 0;
-    this.status = "Running";
+    this.status = "running";
     this.initialBalance = config.initialBalance;
     this.targetAmounts = config.targetAmounts;
     this.targetGainPercentage = config.targetGainPercentage;
@@ -67,7 +67,6 @@ export class MultiBot {
     this.checkInterval = config.checkInterval || 20000;
     this.lastCheck = 0;
     this.currentMint = config.initialInputToken as Address;
-    this.currentTokenAccount = config.initialInputToken as Address;
 
     this.tradeService = new TradeService(
       this.botId,
@@ -106,16 +105,14 @@ export class MultiBot {
 
     const MAX_RETRIES = 3;
     let retries = 0;
-    let balance: number | undefined;
 
     logger.info(`[Bot ${this.botId}] Starting balance refresh for ${tokenName}`);
     while (retries < MAX_RETRIES) {
       try {
         logger.info(`[Bot ${this.botId}] Refreshing balance, attempt ${retries + 1}/${MAX_RETRIES}`);
-        balance = this.initialBalance
-        logger.info(`[Bot ${this.botId}] Balance fetched: ${balance}`);
-        if (balance === undefined || balance < this.initialBalance) {
-          const errorMsg = `[Bot ${this.botId}] Insufficient initial balance: ${balance} < ${this.initialBalance}`;
+        logger.info(`[Bot ${this.botId}] Balance: ${this.initialBalance}`);
+        if (this.initialBalance <= 0) {
+          const errorMsg = `[Bot ${this.botId}] Insufficient initial balance: ${this.initialBalance}`;
           logger.error(errorMsg);
           throw new Error(errorMsg);
         }
@@ -134,12 +131,8 @@ export class MultiBot {
       }
     }
 
-    if (balance !== undefined) {
-      this.initialBalance = balance; // Update initialBalance with the actual balance
-      logger.info(`[Bot ${this.botId}] Updated initial balance to ${this.initialBalance}`);
-      logger.info(`[Bot ${this.botId}] Initiating price watch`);
-      this.initiatePriceWatch();
-    }
+    logger.info(`[Bot ${this.botId}] Initiating price watch`);
+    this.initiatePriceWatch();
   }
 
   private initiatePriceWatch(): void {
@@ -212,7 +205,7 @@ export class MultiBot {
       const ratioMet = currentOutputAmount >= targetOutputAmount;
       if (ratioMet) {
         logger.info(`[Bot ${this.botId}] Ratio met for ${targetTokenName}: ${currentOutputAmount} >= ${targetOutputAmount}. Executing trade...`);
-        await this.executeTrade(targetMint as Address, currentOutputAmount);
+        await this.tradeService.evaluateQuoteAndSwap(quote, this.initialBalance);
         return;
       } else {
         const difference = ((currentOutputAmount - targetOutputAmount) / targetOutputAmount) * 100;
@@ -222,45 +215,19 @@ export class MultiBot {
 
         const botData: BotData = {
           botId: this.botId,
-          status: this.stopped ? "Stopped" : "Running",
+          status: this.stopped ? "stopped" : "running",
           inputMint: currentTokenName,
           outputMint: targetTokenName,
-          currentPrice: currentOutputAmount, // Use currentOutputAmount directly
+          currentPrice: currentOutputAmount,
           targetTrade: targetOutputAmount,
           difference: difference,
           trades: this.tradeCounter
         };
 
         // Emit the bot data to update the dashboard
-        this.emit('bot:difference', botData);
+        this.notificationService.emit(this.socket, 'bot:difference', botData);
       }
     }
-  }
-
-  private async executeTrade(targetMint: Address, receivedAmount: number): Promise<void> {
-    const targetTokenName = await getTokenName(targetMint);
-    logger.info(`[Bot ${this.botId}] Executing trade to ${targetTokenName} (${targetMint}) with expected amount: ${receivedAmount}`);
-
-    logger.info(`[Bot ${this.botId}] Fetching quote for trade`);
-    const inputDecimals = await getTokenDecimalsByAddressRaw(this.currentMint);
-    const amountInLamports = this.initialBalance * Math.pow(10, inputDecimals);
-
-    const quote = await this.tradeService.getQuote2({
-      inputMint: this.currentMint, // Use mint, not token account
-      outputMint: targetMint,
-      amount: amountInLamports,
-      swapMode: "ExactIn",
-    });
-
-    if (!quote) {
-      const errorMsg = `[Bot ${this.botId}] Failed to fetch quote for trade to ${targetTokenName}`;
-      logger.error(errorMsg);
-      throw new Error(errorMsg);
-    }
-
-    logger.info(`[Bot ${this.botId}] Quote for trade: ${JSON.stringify(quote)}`);
-    await this.tradeService.evaluateQuoteAndSwap(quote, this.initialBalance);
-    logger.info(`[Bot ${this.botId}] Trade submitted for ${targetTokenName}`);
   }
 
   public postTransactionProcessing = async (quote: QuoteResponse, txid: string): Promise<void> => {
@@ -352,37 +319,6 @@ export class MultiBot {
     logger.info(`[Bot ${this.botId}] Bot terminated successfully`);
     this.notificationService.log(`[Bot ${this.botId}] Bot terminated successfully`, (this.botId));
   }
-
-  private serializeForSocket(data: any): any {
-    if (data === null || data === undefined) {
-      return data;
-    }
-
-    if (typeof data === 'bigint') {
-      return data.toString();
-    }
-
-    if (Array.isArray(data)) {
-      return data.map(this.serializeForSocket.bind(this));
-    }
-
-    if (typeof data === 'object') {
-      const result: any = {};
-      for (const [key, value] of Object.entries(data)) {
-        result[key] = this.serializeForSocket(value);
-      }
-      return result;
-    }
-
-    return data;
-  }
-
-  private emit(event: string, data: any) {
-    this.socket.emit(event, this.serializeForSocket(data));
-  }
 }
-
-// Add type for bot status
-type BotStatus = "Running" | "Stopped";
 
 export default MultiBot;

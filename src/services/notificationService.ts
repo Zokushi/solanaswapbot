@@ -1,18 +1,52 @@
 // src/services/notificationService.ts
-import nodemailer from 'nodemailer';
-import { BotData, LogSwapArgs } from '../core/types.js';
-import dotenv from 'dotenv';
-import { formatPrice, getTokenName } from '../utils/helper.js';
-import prisma from '../utils/prismaClient.js';
-import logger from '../utils/logger.js';
-import fetch from 'node-fetch';
-import { TradeBotError, ErrorCodes } from '../utils/error.js';
 import { Socket } from 'socket.io-client';
-
-dotenv.config({ path: '.env' });
+import { BotData, LogSwapArgs } from '../core/types.js';
+import { formatPrice } from '../utils/helper.js';
+import logger from '../utils/logger.js';
+import { PriceService } from './priceService.js';
+import { TransactionRepository } from './transactionRepository.js';
 
 export class NotificationService {
-  constructor() { }
+  private priceService: PriceService;
+  private transactionRepo: TransactionRepository;
+
+  constructor(
+    priceService: PriceService = new PriceService(),
+    transactionRepo: TransactionRepository = new TransactionRepository()
+  ) {
+    this.priceService = priceService;
+    this.transactionRepo = transactionRepo;
+  }
+
+  private serializeForSocket(data: any): any {
+    if (data === null || data === undefined) {
+      return data;
+    }
+    
+    if (typeof data === 'bigint') {
+      return data.toString();
+    }
+    
+    if (Array.isArray(data)) {
+      return data.map(this.serializeForSocket.bind(this));
+    }
+    
+    if (typeof data === 'object') {
+      const result: any = {};
+      for (const [key, value] of Object.entries(data)) {
+        result[key] = this.serializeForSocket(value);
+      }
+      return result;
+    }
+    
+    return data;
+  }
+
+  public emit(socket: Socket, event: string, data: any): void {
+    if (socket) {
+      socket.emit(event, this.serializeForSocket(data));
+    }
+  }
 
   public log(message: string, botId: string) {
     logger.info(`[Bot ${botId}] ${message}`);
@@ -41,7 +75,6 @@ export class NotificationService {
 
       logger.info(`[Bot ${botId.toString()}] Difference Update: ${JSON.stringify(message)}`);
       
-      // Emit the update to the socket
       if (socket) {
         socket.emit('bot:difference', message);
       }
@@ -52,78 +85,31 @@ export class NotificationService {
 
   async logSwap(args: LogSwapArgs): Promise<void> {
     const { botId, tokenIn, tokenInAmount, tokenOut, tokenOutAmount, txid } = args;
-    const priceUSDInRecord = await this.getPrice(tokenIn);
-    const priceUSDOutRecord = await this.getPrice(tokenOut);
-    const priceUSDIn = priceUSDInRecord[tokenIn];
-    const priceUSDOut = priceUSDOutRecord[tokenOut];
-    const updatedMint = await getTokenName(tokenIn);
-    const updatedMintOut = await getTokenName(tokenOut);
-
+    
     try {
-      await prisma.transaction.create({
-        data: {
-          botId,
-          tokenIn: updatedMint || tokenIn,
-          tokenInAmount,
-          tokenOut: updatedMintOut || tokenOut,
-          tokenOutAmount,
-          tokenInUSD: Number(priceUSDIn),
-          tokenOutUSD: Number(priceUSDOut),
-          totalValueUSD: Number(priceUSDIn) * Number(tokenInAmount),
-          txid,
-        },
+      const priceUSDIn = await this.priceService.getPrice(tokenIn);
+      const priceUSDOut = await this.priceService.getPrice(tokenOut);
+
+      const tokenInUSD = priceUSDIn[tokenIn] ? Number(priceUSDIn[tokenIn]) : 0;
+      const tokenOutUSD = priceUSDOut[tokenOut] ? Number(priceUSDOut[tokenOut]) : 0;
+      const totalValueUSD = tokenInUSD * Number(tokenInAmount);
+
+      await this.transactionRepo.createTransaction({
+        botId,
+        tokenIn,
+        tokenInAmount,
+        tokenOut,
+        tokenOutAmount,
+        tokenInUSD,
+        tokenOutUSD,
+        totalValueUSD,
+        txid,
       });
-      logger.info(`[Bot ${botId}] Logged swap to DB: ${tokenInAmount} ${tokenIn} -> ${tokenOutAmount} ${tokenOut}, TX: ${txid}`);
+
+      logger.info(`[Bot ${botId}] Logged swap: ${tokenInAmount} ${tokenIn} -> ${tokenOutAmount} ${tokenOut}, TX: ${txid}`);
     } catch (error) {
-      const err = new TradeBotError(
-        `Error logging swap to DB: ${error instanceof Error ? error.message : String(error)}`,
-        ErrorCodes.DB_ERROR,
-        { botId, txid }
-      );
-      logger.error(err.message, err);
-      throw err;
-    } finally {
-      await prisma.$disconnect();
-    }
-  }
-
-  public async getPrice(mints: string): Promise<Record<string, number>> {
-    if (mints.length === 0) {
-      throw new TradeBotError('No mint addresses provided', ErrorCodes.INVALID_CONFIG);
-    }
-
-    const query = mints;
-    const url = `https://lite-api.jup.ag/price/v2?ids=${query}`;
-
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response) {
-        throw new TradeBotError('Invalid response from price API', ErrorCodes.API_ERROR, { url });
-      }
-
-      const prices: Record<string, number> = {};
-      const json = await response.json() as Record<string, { price: number }>;
-      if (json[mints]) {
-        prices[mints] = json[mints].price;
-      } else {
-        logger.warn(`Price for mint '${mints}' not found.`);
-      }
-
-      logger.info(`[TradeService] Fetched prices: ${JSON.stringify(prices)}`);
-      return prices;
-    } catch (error) {
-      const err = new TradeBotError(
-        `Failed to fetch prices: ${error instanceof Error ? error.message : String(error)}`,
-        ErrorCodes.API_ERROR,
-        { mints }
-      );
-      logger.error(err.message, err);
-      throw err;
+      logger.error(`[Bot ${botId}] Error logging swap:`, error);
+      throw error;
     }
   }
 }

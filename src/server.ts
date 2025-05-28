@@ -193,19 +193,23 @@ export const cleanup = async () => {
 };
 
 // Handle signals
-process.on('SIGINT', () => {
-  logger.info('Received SIGINT signal (Ctrl+C)');
-  // Prevent multiple cleanup calls
+const handleSignal = async (signal: string) => {
+  logger.info(`Received ${signal} signal`);
+  // Remove all listeners to prevent multiple cleanup calls
   process.removeAllListeners('SIGINT');
-  cleanup();
-});
-
-process.on('SIGTERM', () => {
-  logger.info('Received SIGTERM signal');
-  // Prevent multiple cleanup calls
   process.removeAllListeners('SIGTERM');
-  cleanup();
-});
+  await cleanup();
+};
+
+// Set max listeners to a reasonable number
+process.setMaxListeners(20);
+
+// Remove any existing listeners first
+process.removeAllListeners('SIGINT');
+process.removeAllListeners('SIGTERM');
+
+process.on('SIGINT', () => handleSignal('SIGINT'));
+process.on('SIGTERM', () => handleSignal('SIGTERM'));
 
 // Handle uncaught errors
 process.on('uncaughtException', (error) => {
