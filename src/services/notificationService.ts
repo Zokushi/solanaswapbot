@@ -3,18 +3,15 @@ import { Socket } from 'socket.io-client';
 import { BotData, LogSwapArgs } from '../core/types.js';
 import { formatPrice } from '../utils/helper.js';
 import logger from '../utils/logger.js';
-import { PriceService } from './priceService.js';
+import getPrice from './getPrice.js';
 import { TransactionRepository } from './transactionRepository.js';
 
 export class NotificationService {
-  private priceService: PriceService;
   private transactionRepo: TransactionRepository;
 
   constructor(
-    priceService: PriceService = new PriceService(),
     transactionRepo: TransactionRepository = new TransactionRepository()
   ) {
-    this.priceService = priceService;
     this.transactionRepo = transactionRepo;
   }
 
@@ -87,8 +84,8 @@ export class NotificationService {
     const { botId, tokenIn, tokenInAmount, tokenOut, tokenOutAmount, txid } = args;
     
     try {
-      const priceUSDIn = await this.priceService.getPrice(tokenIn);
-      const priceUSDOut = await this.priceService.getPrice(tokenOut);
+      const priceUSDIn = await getPrice(tokenIn);
+      const priceUSDOut = await getPrice(tokenOut);
 
       const tokenInUSD = priceUSDIn[tokenIn] ? Number(priceUSDIn[tokenIn]) : 0;
       const tokenOutUSD = priceUSDOut[tokenOut] ? Number(priceUSDOut[tokenOut]) : 0;
@@ -100,10 +97,11 @@ export class NotificationService {
         tokenInAmount,
         tokenOut,
         tokenOutAmount,
-        tokenInUSD,
-        tokenOutUSD,
+        tokenInUSD: tokenInUSD,
+        tokenOutUSD: tokenOutUSD,
         totalValueUSD,
         txid,
+        date: new Date()
       });
 
       logger.info(`[Bot ${botId}] Logged swap: ${tokenInAmount} ${tokenIn} -> ${tokenOutAmount} ${tokenOut}, TX: ${txid}`);

@@ -89,6 +89,12 @@ export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocke
     }
   }, [botManager, checkActiveBots]);
 
+  const showTransactionList = React.useCallback((botId: string) => {
+    // This function would typically open a modal or navigate to a transaction list page
+    // For CLI, we can just log the action
+    logger.info(`Showing transaction list for bot ${botId}`);
+  }, []);
+
   const handleStartAllBots = React.useCallback(async () => {
     try {
       const { regularBots, multiBots } = await botManager.getAllBots();

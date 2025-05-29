@@ -12,7 +12,7 @@ interface TargetAmount {
 }
 
 export const MultiBotForm = ({ onComplete, editingConfig }: MultiBotFormProps) => {
-  const { botManager, cliSocket } = useAppContext();
+  const { botManager } = useAppContext();
   const [currentField, setCurrentField] = React.useState(0);
   const [inputValue, setInputValue] = React.useState('');
   const [error, setError] = React.useState('');

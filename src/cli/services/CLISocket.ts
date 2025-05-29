@@ -59,23 +59,6 @@ export class CLISocket {
     return this.eventBus;
   }
 
-  async startBot(botId: string, type: 'regular' | 'multi'): Promise<void> {
-    try {
-      const config = await this.botManager.getConfig(botId, type);
-      if (!config) {
-        throw new Error(`No configuration found for bot ${botId}`);
-      }
-
-      if (type === 'multi') {
-        await this.botManager.startMultiBot(config, this.socket);
-      } else {
-        await this.botManager.startBot(config, this.socket);
-      }
-    } catch (error) {
-      logger.error(`[CLISocket] Failed to start bot ${botId}:`, error);
-      throw error;
-    }
-  }
 
   async stopBot(botId: string): Promise<void> {
     await this.botManager.stopBot(botId);

@@ -21,7 +21,7 @@ export class MultiConfigRepository extends PrismaRepository<MultiConfig & { targ
         data: targetAmounts.map(ta => ({
           configId: config.botId,
           tokenAddress: ta.tokenAddress || '',
-          tokenName: ta.tokenName || ta.tokenAddress || '',
+          tokenName: ta.tokenName || '',
           amount: ta.amount || 0
         }))
       });
@@ -52,7 +52,7 @@ export class MultiConfigRepository extends PrismaRepository<MultiConfig & { targ
           data: targetAmounts.map(ta => ({
             configId: id,
             tokenAddress: ta.tokenAddress || '',
-            tokenName: ta.tokenName || ta.tokenAddress || '',
+            tokenName: ta.tokenName ||  '',
             amount: ta.amount || 0
           }))
         });

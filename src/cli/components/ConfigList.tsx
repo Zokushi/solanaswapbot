@@ -1,16 +1,14 @@
 import React, {  useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { Socket } from 'socket.io-client';
-import { BotManager } from '../../core/types.js';
 import { shortenUUID } from '../../utils/helper.js';
-import { ConfigListProps, SortField, SortDirection, FilterType, BotWithType, ConfigListState } from '../../core/types.js';
+import { ConfigListProps, SortField, SortDirection, FilterType, BotWithType, ConfigListState, BotStatus } from '../../core/types.js';
 import { getSingleTokenData } from '../../services/tokenDataService.js';
 import { useAppContext } from '../context/AppContext.js';
 import { ConfigData } from '../../services/eventBus.js';
 import logger from '../../utils/logger.js';
 import { useApp } from 'ink';
 
-export const ConfigList: React.FC<ConfigListProps> = ({ socket, botManager, onBack }) => {
+export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
   const { cliSocket } = useAppContext();
   const eventBus = cliSocket.getEventBus();
   const { exit } = useApp();
@@ -134,21 +132,26 @@ export const ConfigList: React.FC<ConfigListProps> = ({ socket, botManager, onBa
       ...bot,
       type: 'regular' as const,
       amount: bot.initialInputAmount,
-      targetGainPercentage: BigInt(bot.targetGainPercentage),
-      stopLossPercentage: bot.stopLossPercentage ? BigInt(bot.stopLossPercentage) : undefined
+      targetGainPercentage: bot.targetGainPercentage,
+      stopLossPercentage: bot.stopLossPercentage,
+      firstTradePrice: typeof bot.firstTradePrice === 'number'
+        ? BigInt(bot.firstTradePrice)
+        : bot.firstTradePrice,
+        status: bot.status as BotStatus,
     }));
     const multi = configs.multiBots.map(bot => ({
       ...bot,
       type: 'multi' as const,
       amount: bot.initialInputAmount,
-      targetGainPercentage: BigInt(bot.targetGainPercentage),
-      stopLossPercentage: bot.stopLossPercentage ? BigInt(bot.stopLossPercentage) : undefined,
+      targetGainPercentage: bot.targetGainPercentage,
+      stopLossPercentage: bot.stopLossPercentage,
       targetAmounts: bot.targetAmounts.map(target => ({
         ...target,
         tokenName: tokenNames.get(target.tokenAddress) || target.tokenAddress
-      }))
+      })),
+      status: bot.status as BotStatus
     }));
-    return [...regular, ...multi] as BotWithType[];
+    return [...regular, ...multi];
   }, [configs, tokenNames]);
 
   const filteredBots = React.useMemo(() => {
@@ -270,7 +273,6 @@ export const ConfigList: React.FC<ConfigListProps> = ({ socket, botManager, onBa
 
   const handleEdit = () => {
     if (!selectedConfig) return;
-    
     // Convert BigInt values to strings before sending
     const configToSend = {
       ...selectedConfig,
@@ -289,19 +291,11 @@ export const ConfigList: React.FC<ConfigListProps> = ({ socket, botManager, onBa
     exit();
   };
 
-  const handleViewConfig = (config: BotWithType) => {
-    setSelectedConfig(config);
-    setSelectedAction('view');
-  };
-
-  const handleDeleteConfig = (config: BotWithType) => {
-    setSelectedConfig(config);
-    setSelectedAction('delete');
-  };
-
   const renderBotInfo = (bot: BotWithType) => {
     const inputTokenName = tokenNames.get(bot.initialInputToken) || bot.initialInputToken;
     const outputTokenName = bot.initialOutputToken ? (tokenNames.get(bot.initialOutputToken) || bot.initialOutputToken) : '';
+    const initialInputAmount = bot.initialInputAmount || 0;
+    const firstTradePrice = bot.firstTradePrice || 0;
     const shortId = shortenUUID(bot.botId);
 
     return (
@@ -311,8 +305,15 @@ export const ConfigList: React.FC<ConfigListProps> = ({ socket, botManager, onBa
         <Text>Status: {bot.status}</Text>
         <Text>Input Token: {inputTokenName}</Text>
         {bot.type === 'regular' && <Text>Output Token: {outputTokenName}</Text>}
+        {bot.type === 'regular' &&   <Text>Initial Input Amount: {initialInputAmount}</Text>}
+        {bot.type === 'regular' && <Text>First Trade Price: {firstTradePrice}</Text>}
+        <Text>
+         Target Gain (%): {bot.targetGainPercentage !== undefined
+            ? BigInt(bot.targetGainPercentage).toString()
+            : 'N/A'}
+        </Text>
         {bot.type === 'multi' && bot.targetAmounts && (
-          <Box flexDirection="column">
+<Box flexDirection="column">
             <Text>Target Amounts:</Text>
             {bot.targetAmounts.map((target, index) => (
               <Text key={index}>
@@ -371,45 +372,24 @@ export const ConfigList: React.FC<ConfigListProps> = ({ socket, botManager, onBa
     );
   }
 
-  const activeBots = filteredBots.filter(bot => bot.status === 'running');
-  const inactiveBots = filteredBots.filter(bot => bot.status === 'stopped');
-
+  
   return (
     <Box flexDirection="column">
       <Text bold>All Configurations</Text>
       <Text>Sort by: {sortField} ({sortDirection}) - Filter: {filter}</Text>
       <Box marginTop={1} flexDirection="column">
-        {activeBots.length > 0 && (
           <Box flexDirection="column">
-            <Text bold color="green">Active Bots ({activeBots.length})</Text>
-            {activeBots.map((bot, index) => (
+            {allBots.map((bot, index) => (
               <Box key={`active-${bot.botId}`} marginLeft={2}>
                 <Text
-                  color={selectedIndex === index ? 'cyan' : 'green'}
+                  color={selectedIndex === index ? 'cyan' : 'white'}
                 >
-                  {bot.type} #{shortenUUID(bot.botId)}
+                  {bot.type} - {(bot.initialInputToken)} {bot.amount}
                 </Text>
               </Box>
             ))}
-          </Box>
-        )}
-        {inactiveBots.length > 0 && (
-          <Box marginTop={1} flexDirection="column">
-            <Text bold color="yellow">
-              Inactive Bots ({inactiveBots.length})
-            </Text>
-            {inactiveBots.map((bot, index) => (
-              <Box key={`inactive-${bot.botId}`} marginLeft={2}>
-                <Text
-                  color={selectedIndex === activeBots.length + index ? 'cyan' : 'yellow'}
-                >
-                  {bot.type} #{shortenUUID(bot.botId)}
-                </Text>
-              </Box>
-            ))}
-          </Box>
-        )}
-        {activeBots.length === 0 && inactiveBots.length === 0 && (
+          </Box>        
+        {allBots.length === 0 && (
           <Text>No configurations found</Text>
         )}
       </Box>

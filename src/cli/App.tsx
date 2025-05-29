@@ -8,6 +8,7 @@ import { MultiBotForm } from './forms/MultiBotForm.js';
 import ConfigList from './components/ConfigList.js';
 import { AppProvider } from './context/AppContext.js';
 import { EnvVarInput } from './components/EnvVarInput.js';
+import TransactionList from './components/TransactionList.js';
 import { MainMenu } from './components/MainMenu.js';
 import Dashboard from './components/Dashboard.js';
 import logger from '../utils/logger.js';
@@ -30,21 +31,20 @@ const App = () => {
   const [showConfigList, setShowConfigList] = React.useState(false);
   const [showConfirmStartAll, setShowConfirmStartAll] = React.useState(false);
   const [envVarsComplete, setEnvVarsComplete] = React.useState(false);
-
+  const [showTransactionList, setShowTransactionList] = React.useState(false);
   // Initialize services
   const botManager = React.useMemo(() => new DefaultBotManager(), []);
   const socket = React.useMemo(() => new CLISocket(botManager), [botManager]);
   const eventBus = socket.getEventBus();
 
   const {
-    activeBots,
     stoppingProgress,
     startingProgress,
     checkActiveBots,
     handleStopAllBots,
     handleStartAllBots,
-    setStoppingProgress,
-    setStartingProgress
+    setStartingProgress,
+
   } = useBotManagement(botManager, socket);
 
   const options = [
@@ -53,6 +53,7 @@ const App = () => {
     'Add Multi Config',
     'Start All Bots',
     'Stop All Bots',
+    'View Transactions',
     'Exit'
   ];
 
@@ -60,7 +61,7 @@ const App = () => {
     if (envVarsComplete) {
       checkActiveBots();
       // Set up an interval to refresh active bots every 5 seconds
-      const interval = setInterval(checkActiveBots, 5000);
+      const interval = setInterval(checkActiveBots, 10000);
       return () => clearInterval(interval);
     }
   }, [envVarsComplete, checkActiveBots]);
@@ -91,8 +92,8 @@ const App = () => {
       }
       
       // Disconnect socket
-      if (socket.getSocket()) {
-        socket.getSocket().disconnect();
+      if (socket) {
+        socket.disconnect();
       }
       
       // Exit the app
@@ -163,6 +164,10 @@ const App = () => {
       } else if (selectedOption === 4) { // Stop All Bots
         handleStopAllBots();
       }
+       else if (selectedOption === 5) { // Exit
+        setShowTransactionList(true);
+      }
+
     }
   });
 
@@ -198,6 +203,21 @@ const App = () => {
     }
   }
 
+  if (showTransactionList) {
+    return (
+      <AppProvider>
+        <TransactionList 
+          onBack={() => {
+            setShowTransactionList(false);
+            setSelectedOption(0); // Reset selection to first option
+          }} 
+          height={20}
+          socket={socket.getSocket()} 
+        />
+      </AppProvider>
+    );
+  }
+
   if (showConfigList) {
     return (
       <AppProvider>
@@ -216,12 +236,12 @@ const App = () => {
   return (
     <AppProvider>
       <Box flexDirection="column">
-        <Text color="cyan">{TRADE_BOT_ASCII}</Text>
+        <Text  backgroundColor="black" color="cyan">{TRADE_BOT_ASCII}</Text>
         <Text bold color="white">Welcome to Trading Bot CLI</Text>
         
         {/* Dashboard Section */}
-        <Box marginTop={1}>
-          <Dashboard 
+        <Box  marginTop={1}>
+          <Dashboard backgroundColor="white"
             socket={socket.getSocket()} 
             height={12} 
             onRefresh={() => checkActiveBots()} 
@@ -294,7 +314,7 @@ const App = () => {
     </AppProvider>
   );
 };
-
+  {}
 // Entry point
 const cli = () => {
   render(<App />);

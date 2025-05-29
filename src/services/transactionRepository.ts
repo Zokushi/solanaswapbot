@@ -1,19 +1,10 @@
 import prisma from '../utils/prismaClient.js';
 import { TradeBotError, ErrorCodes } from '../utils/error.js';
 import logger from '../utils/logger.js';
+import { LogSwapArgs } from '../core/types.js';
 
 export class TransactionRepository {
-  async createTransaction(data: {
-    botId: string;
-    tokenIn: string;
-    tokenInAmount: number;
-    tokenOut: string;
-    tokenOutAmount: number;
-    tokenInUSD: number;
-    tokenOutUSD: number;
-    totalValueUSD: number;
-    txid: string;
-  }) {
+  async createTransaction(data: LogSwapArgs) {
     try {
       const transaction = await prisma.transaction.create({ data });
       logger.info(`[TransactionRepository] Created transaction: ${JSON.stringify(transaction)}`);
@@ -26,9 +17,7 @@ export class TransactionRepository {
       );
       logger.error(err.message, err);
       throw err;
-    } finally {
-      await prisma.$disconnect();
-    }
+    } 
   }
 
   async getTransactions() {
@@ -46,8 +35,6 @@ export class TransactionRepository {
       );
       logger.error(err.message, err);
       throw err;
-    } finally {
-      await prisma.$disconnect();
     }
   }
 } 

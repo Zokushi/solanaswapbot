@@ -21,7 +21,7 @@ export class MultiBot {
   public currentTrade: number;
   public currentMint: Address;
   public currentTokenAccount!: Address;
-  public initialBalance: number;
+  public initialInputAmount: number;
   public targetAmounts: Record<string, number>;
   public targetGainPercentage: number;
   public checkInterval: number;
@@ -41,7 +41,7 @@ export class MultiBot {
   private stopped: boolean;
 
   constructor(
-    config: MultiBotConfig & { targetAmounts: Record<string, number>; initialBalance: number; targetGainPercentage: number },
+    config: MultiBotConfig & { targetAmounts: Record<string, number>; targetGainPercentage: number },
     socket: Socket,
   ) {
     if (!config.rpc) {
@@ -61,7 +61,7 @@ export class MultiBot {
     this.currentTrade = 0;
     this.ratio = 0;
     this.status = "running";
-    this.initialBalance = config.initialBalance;
+    this.initialInputAmount = config.initialInputAmount || 0;
     this.targetAmounts = config.targetAmounts;
     this.targetGainPercentage = config.targetGainPercentage;
     this.tradeCounter = 0;
@@ -90,7 +90,7 @@ export class MultiBot {
 
   async init(): Promise<void> {
     const tokenName = await getTokenName(this.currentMint); // Use mint for token name
-    const logMsg = `[Bot ${this.botId}] Initiating trade bot with ${this.initialBalance} ${tokenName}`;
+    const logMsg = `[Bot ${this.botId}] Initiating trade bot with ${this.initialInputAmount} ${tokenName}`;
     logger.info(logMsg);
 
     logger.info(`[Bot ${this.botId}] Fetching public key from wallet`);
@@ -113,9 +113,9 @@ export class MultiBot {
     while (retries < MAX_RETRIES) {
       try {
         logger.info(`[Bot ${this.botId}] Refreshing balance, attempt ${retries + 1}/${MAX_RETRIES}`);
-        logger.info(`[Bot ${this.botId}] Balance: ${this.initialBalance}`);
-        if (this.initialBalance <= 0) {
-          const errorMsg = `[Bot ${this.botId}] Insufficient initial balance: ${this.initialBalance}`;
+        logger.info(`[Bot ${this.botId}] Balance: ${this.initialInputAmount}`);
+        if (this.initialInputAmount <= 0) {
+          const errorMsg = `[Bot ${this.botId}] Insufficient initial balance: ${this.initialInputAmount}`;
           logger.error(errorMsg);
           throw new Error(errorMsg);
         }
@@ -181,7 +181,7 @@ export class MultiBot {
     const currentTokenName = await getTokenName(this.currentMint); // Use mint for token name
 
     const inputDecimals = await getTokenDecimalsByAddressRaw(this.currentMint);
-    const amountInLamports = this.initialBalance * Math.pow(10, inputDecimals);
+    const amountInLamports = this.initialInputAmount * Math.pow(10, inputDecimals);
 
     for (const [targetMint, targetAmount] of Object.entries(this.targetAmounts)) {
       const targetTokenName = await getTokenName(targetMint as Address);
@@ -208,7 +208,7 @@ export class MultiBot {
       const ratioMet = currentOutputAmount >= targetOutputAmount;
       if (ratioMet) {
         logger.info(`[Bot ${this.botId}] Ratio met for ${targetTokenName}: ${currentOutputAmount} >= ${targetOutputAmount}. Executing trade...`);
-        await this.tradeService.evaluateQuoteAndSwap(quote, this.initialBalance);
+        await this.tradeService.evaluateQuoteAndSwap(quote, this.initialInputAmount);
         return;
       } else {
         const difference = ((currentOutputAmount - targetOutputAmount) / targetOutputAmount) * 100;
@@ -270,8 +270,8 @@ export class MultiBot {
       logger.error(errorMsg);
       throw new Error(errorMsg);
     }
-    this.initialBalance = actualBalance;
-    logger.info(`[Bot ${this.botId}] Updated current mint to ${outputTokenName} (${this.currentMint}) with verified balance ${this.initialBalance}`);
+    this.initialInputAmount = actualBalance;
+    logger.info(`[Bot ${this.botId}] Updated current mint to ${outputTokenName} (${this.currentMint}) with verified balance ${this.initialInputAmount}`);
 
     // Update target amounts with the gain factor
     const gainFactor = 1 + (this.targetGainPercentage / 100);
@@ -292,7 +292,7 @@ export class MultiBot {
       await this.configService.updateBotConfig(this.botId, {
         botId: this.botId,
         initialInputToken: await getTokenName(this.currentMint)!,
-        initialBalance: this.initialBalance,
+        initialInputAmount: this.initialInputAmount,
         targetAmounts: this.targetAmounts,
         targetGainPercentage: this.targetGainPercentage,
         checkInterval: this.checkInterval,

@@ -1,4 +1,4 @@
-import { RoutePlanStep} from "@jup-ag/api";
+import { RoutePlanStep } from "@jup-ag/api";
 import { Address, Rpc, createSolanaRpcSubscriptions, SolanaRpcApiMainnet } from "@solana/kit";
 import { Socket } from "socket.io-client";
 import { MultiConfig, TargetAmount } from "@prisma/client";
@@ -47,6 +47,14 @@ export const BigIntUtils = {
     return value * BigInt(Math.floor(multiplier));
   }
 };
+
+export interface JupiterPriceResponse {
+  data: {
+    [mint: string]: {
+      price: number;
+    };
+  };
+}
 
 export interface NewConfig {
   botId: string;
@@ -197,13 +205,6 @@ interface QuoteResponse {
   timeTaken?: number;
 }
 
-interface QuicknodeConfig {
-  endpoint: string;
-  jupiterApi?: string;
-  wssEndpoint?: string;
-  computeMargin?: number;
-}
-
 interface QuicknodeRpcConfig {
   wssEndpoint: string;
 }
@@ -217,7 +218,6 @@ interface CreateAddonsApiParams {
 export type {
   QuoteGetRequest,
   QuoteResponse,
-  QuicknodeConfig,
   QuicknodeRpcConfig,
   CreateAddonsApiParams,
   LogEntry,
@@ -263,9 +263,11 @@ export interface Bot {
 
 export interface BotWithType extends Bot {
   type: 'regular' | 'multi';
-  firstTradePrice?: bigint;
-  targetGainPercentage?: bigint;
-  stopLossPercentage?: bigint;
+  firstTradePrice?: bigint | number;
+  targetGainPercentage?: number;
+  stopLossPercentage?: number;
+  initialInputAmount?: bigint | number;
+  initialOutputAmount?: bigint | number;
   checkInterval?: number;
   targetAmounts?: Array<{
     tokenAddress: string;
@@ -313,6 +315,7 @@ export interface BotManager {
   startMultiBot(config: Partial<MultiBotConfig>, socket: Socket): Promise<void>;
   stopBot(botId: string): Promise<void>;
   getBotStatus(botId: string): Promise<any>;
+  getTransactionList(): Promise<Array<LogSwapArgs>>;
   getAllBots(): Promise<{
     regularBots: Array<Config & { status: string }>;
     multiBots: Array<MultiConfig & { status: string; targetAmounts: TargetAmount[] }>;
@@ -327,7 +330,7 @@ export interface SocketService {
   emit(event: string, data: any): void;
   on(event: string, handler: (data: any) => void): void;
   off(event: string, handler: (data: any) => void): void;
-disconnect(): void;
+  disconnect(): void;
 }
 
 export type SortField = 'type' | 'amount' | 'status';
@@ -355,7 +358,7 @@ export interface RegularBotFormProps {
 export interface MultiBotFormProps {
   onComplete: () => void;
   editingConfig?: any;
-} 
+}
 
 
 export interface TokenSelectorProps {

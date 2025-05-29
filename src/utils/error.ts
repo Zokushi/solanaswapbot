@@ -64,4 +64,5 @@ export function logError(error: unknown, context?: string): TradeBotError {
 
   logger.error(`[${context || 'Unknown'}] ${tradeBotError.message}`, tradeBotError);
   return tradeBotError;
+
 }

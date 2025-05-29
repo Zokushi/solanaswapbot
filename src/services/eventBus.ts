@@ -24,7 +24,7 @@ export type ConfigData = {
     initialInputToken: string;
     initialOutputToken: string;
     initialInputAmount: number;
-    firstTradePrice: number;
+    firstTradePrice: number | bigint;
     targetGainPercentage: number;
     stopLossPercentage?: number;
     status: string;

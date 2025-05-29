@@ -151,7 +151,7 @@ const Dashboard: React.FC<DashboardProps> = ({ socket, height = 20, onRefresh })
         {Array.from(metrics.entries()).map(([botId, targetMetrics]) => (
           <Box key={botId} flexDirection="column">
             {Array.from(targetMetrics.values()).map((metric, index) => (
-              <Text key={`${botId}-${metric.targetMint || metric.outputToken || index}`}>
+              <Text color="cyan" key={`${botId}-${metric.targetMint || metric.outputToken || index}`}>
                 {shortenUUID(botId).padEnd(12)} 
                 {metric.difference.toFixed(2).padEnd(10)} 
                 {metric.currentPrice.toFixed(2).padEnd(12)} 

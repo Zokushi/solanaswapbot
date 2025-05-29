@@ -15,6 +15,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ selectedOption, options }) =
     if (option === 'Start All Bots') return 'magentaBright';
     if (option === 'View All Configs') return 'magentaBright';
     if (option === 'Add New Config' || option === 'Add Multi Config') return 'magentaBright';
+    if (option === 'View Transactions') return 'magentaBright';
     
     return 'whiteBright'; // Default color for better readability
   };

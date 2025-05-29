@@ -1,7 +1,7 @@
 import { Socket } from "socket.io-client";
 import { TradeBot } from "./bot.js";
 import { MultiBot } from "./multibot.js";
-import { TradeBotConfig, MultiBotConfig, BotResponse, BotManager } from "./types.js";
+import { TradeBotConfig, MultiBotConfig, BotResponse, BotManager, LogSwapArgs } from "./types.js";
 import { createRpcClients } from "../services/rpcFactory.js";
 import { getTokenDecimalsByName, getTokenAddressByName } from "../utils/helper.js";
 import { ENV } from "../config/index.js";
@@ -10,14 +10,17 @@ import bs58 from "bs58";
 import { createKeyPairFromBytes, Address } from "@solana/kit";
 import { Config, MultiConfig, TargetAmount } from "@prisma/client";
 import { ConfigService } from "../services/configService.js";
+import { TransactionService } from "../services/transactionService.js";
 
 export class DefaultBotManager implements BotManager {
   public activeBots: Map<string, TradeBot> = new Map();
   public activeMultiBots: Map<string, MultiBot> = new Map();
   private configService: ConfigService;
+  private transactionService: TransactionService;
 
   constructor() {
     this.configService = new ConfigService();
+    this.transactionService = new TransactionService();
   }
 
   private async initializeBot(config: Partial<TradeBotConfig>, socket: Socket): Promise<TradeBot> {
@@ -195,6 +198,26 @@ export class DefaultBotManager implements BotManager {
     });
   }
 
+  public async getTransactionList(): Promise<Array<LogSwapArgs>> {
+    try {
+      const transactions = await this.transactionService.handleGetTransactions();
+      return transactions.map((tx: LogSwapArgs) => ({
+        ...tx,
+        tokenIn: tx.tokenIn,
+        tokenOut: tx.tokenOut,
+        amountIn: Number(tx.tokenInAmount),
+        amountOut: Number(tx.tokenOutAmount),
+        tokenInUSD: Number(tx.tokenInUSD),
+        tokenOutUSD: Number(tx.tokenOutUSD),
+        totalValueUSD: Number(tx.totalValueUSD),
+        timestamp: new Date(tx.date).toISOString(),
+      }));
+    } catch (error) {
+      logger.error(`Error fetching transaction list: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('Failed to fetch transaction list');
+    }
+  }
+  
   public async deleteConfig(botId: string, type: 'regular' | 'multi'): Promise<void> {
     try {
       if (type === 'regular') {
