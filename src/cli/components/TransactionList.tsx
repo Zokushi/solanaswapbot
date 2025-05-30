@@ -45,7 +45,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ height = 20, onBack }
     };
 
     // Listen for events
-    socket.on('transaction:get', handleTransactionGet);
+    socket.on('transaction:response', handleTransactionGet);
     socket.on('transactionUpdate', handleTransactionUpdate);
 
     // Request transactions
@@ -53,7 +53,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ height = 20, onBack }
 
     // Cleanup listeners on unmount
     return () => {
-      socket.off('transaction:get', handleTransactionGet);
+      socket.off('transaction:response', handleTransactionGet);
       socket.off('transactionUpdate', handleTransactionUpdate);
     };
   }, [socket]);

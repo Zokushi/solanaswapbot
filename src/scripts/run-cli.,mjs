@@ -13,17 +13,20 @@ const __dirname = dirname(__filename);
 
 const LOCK_FILE = join(process.cwd(), 'cli.lock');
 
-// Enforce single CLI instance
 function acquireLock() {
   try {
-    const fd = fs.openSync(LOCK_FILE, 'wx');
+    const fd = fs.openSync(LOCK_FILE, 'wx'); // Exclusive write
     fs.writeFileSync(fd, process.pid.toString());
     fs.closeSync(fd);
     logger.debug('Acquired CLI lock', { method: 'acquireLock', pid: process.pid });
     return true;
   } catch (error) {
-    logger.error('Another CLI instance is running', { method: 'acquireLock', error: error.message });
-    console.error('Error: Another CLI instance is already running');
+    if (error.code === 'EEXIST') {
+      logger.error('Another CLI instance is running', { method: 'acquireLock', error: error.message });
+      console.error('Error: Another CLI instance is already running');
+      process.exit(1);
+    }
+    logger.error('Failed to acquire CLI lock', { method: 'acquireLock', error: error.message });
     process.exit(1);
   }
 }
@@ -34,7 +37,7 @@ function releaseLock() {
       const pid = fs.readFileSync(LOCK_FILE, 'utf8');
       if (parseInt(pid) === process.pid) {
         fs.unlinkSync(LOCK_FILE);
-        logger.debug('Released CLI lock', { method: 'releaseLock', pid });
+        logger.debug('Released CLI lock', { method: 'releaseLock' });
       }
     }
   } catch (error) {

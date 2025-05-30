@@ -14,8 +14,6 @@ import Dashboard from './components/Dashboard.js';
 import { createLogger } from '../utils/logger.js';
 import { handleError } from '../utils/errorHandler.js';
 import { ErrorCodes } from '../utils/errors.js';
-import fs from 'fs';
-import path from 'path';
 
 const logger = createLogger('CLIApp');
 const CHECK_BOTS_INTERVAL = 30000; // 30 seconds

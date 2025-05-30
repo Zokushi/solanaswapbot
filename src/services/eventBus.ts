@@ -15,7 +15,6 @@ export class EventBus {
   private setupEventListeners() {
     this.socket.on('connect', () => {
       this.logger.info('Socket connected', { method: 'socketConnect', socketId: this.socket.id });
-      this.flushEventQueue();
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -47,14 +46,7 @@ export class EventBus {
     });
   }
 
-  private flushEventQueue() {
-    if (!this.socket.connected) return;
-    while (this.eventQueue.length > 0) {
-      const { event, data } = this.eventQueue.shift()!;
-      this.socket.emit(event, data);
-      this.logger.debug('Emitted queued event', { method: 'emit', event });
-    }
-  }
+ 
 
   emit(event: string, data: unknown) {
     if (!this.socket.connected) {

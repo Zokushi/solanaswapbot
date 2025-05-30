@@ -3,33 +3,30 @@ import { Socket } from 'socket.io-client';
 import { BotData, LogSwapArgs } from '../core/types.js';
 import { formatPrice } from '../utils/helper.js';
 import { createLogger } from '../utils/logger.js';
-import {getPrice }from './getPrice.js';
-import { TransactionRepository } from './transactionRepository.js';
+import { getPrice } from './getPrice.js';
+import { createTransaction } from './transactionRepository.js';
 
 const logger = createLogger('NotificationService');
 
 export class NotificationService {
-  private transactionRepo: TransactionRepository;
 
   constructor(
-    transactionRepo: TransactionRepository = new TransactionRepository()
   ) {
-    this.transactionRepo = transactionRepo;
   }
 
   private serializeForSocket(data: any): any {
     if (data === null || data === undefined) {
       return data;
     }
-    
+
     if (typeof data === 'bigint') {
       return data.toString();
     }
-    
+
     if (Array.isArray(data)) {
       return data.map(this.serializeForSocket.bind(this));
     }
-    
+
     if (typeof data === 'object') {
       const result: any = {};
       for (const [key, value] of Object.entries(data)) {
@@ -37,7 +34,7 @@ export class NotificationService {
       }
       return result;
     }
-    
+
     return data;
   }
 
@@ -73,7 +70,7 @@ export class NotificationService {
       };
 
       logger.info(`[Bot ${botId.toString()}] Difference Update: ${JSON.stringify(message)}`);
-      
+
       if (socket) {
         socket.emit('bot:difference', message);
       }
@@ -84,7 +81,7 @@ export class NotificationService {
 
   async logSwap(args: LogSwapArgs): Promise<void> {
     const { botId, tokenIn, tokenInAmount, tokenOut, tokenOutAmount, txid } = args;
-    
+
     try {
       const priceUSDIn = await getPrice(tokenIn);
       const priceUSDOut = await getPrice(tokenOut);
@@ -93,7 +90,7 @@ export class NotificationService {
       const tokenOutUSD = priceUSDOut[tokenOut] ? Number(priceUSDOut[tokenOut]) : 0;
       const totalValueUSD = tokenInUSD * Number(tokenInAmount);
 
-      await this.transactionRepo.createTransaction({
+      await createTransaction({
         botId,
         tokenIn,
         tokenInAmount,

@@ -1,22 +1,19 @@
 import { Socket } from 'socket.io-client';
-import { TransactionRepository } from './transactionRepository.js';
 import { createLogger } from '../utils/logger.js';
+import { getTransactions } from './transactionRepository.js';
 
 const logger = createLogger('TransactionService');
 
 export class TransactionService {
-  private transactionRepo: TransactionRepository;
 
   constructor(
-    transactionRepo: TransactionRepository = new TransactionRepository()
   ) {
-    this.transactionRepo = transactionRepo;
   }
 
   public async handleGetTransactions(): Promise<any> {
     try {
       logger.info('Fetching transactions from repository');
-      const transactions = await this.transactionRepo.getTransactions();
+      const transactions = await getTransactions();
       logger.info(`Retrieved ${transactions.length} transactions`);
       return { transactions };
     } catch (error) {
@@ -27,7 +24,7 @@ export class TransactionService {
 
   public async broadcastTransactionUpdate(socket: Socket): Promise<void> {
     try {
-      const transactions = await this.transactionRepo.getTransactions();
+      const transactions = await getTransactions();
       socket.emit('transactionUpdate', { transactions });
     } catch (error) {
       logger.error('Error broadcasting transaction update:', error);

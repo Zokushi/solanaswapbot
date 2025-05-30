@@ -9,6 +9,7 @@ import prisma from './utils/prismaClient.js';
 import { createLogger } from './utils/logger.js';
 import { handleError } from './utils/errorHandler.js';
 import { TradeBotError, ErrorCodes } from './utils/errors.js';
+import { TransactionService } from './services/transactionService.js';
 
 const logger = createLogger('Server');
 const app = express();
@@ -24,7 +25,7 @@ const io = new Server(httpServer, {
 });
 
 const configService = new ConfigService();
-
+const transactionService = new TransactionService();
 // Helper function to serialize data for socket transmission
 const serializeForSocket = (data: any): any => {
   if (data === null || data === undefined) {
@@ -75,12 +76,11 @@ app.get('/api/token/:mint', async (req, res) => {
   }
 });
 
-// Socket.IO connection handling
 io.on('connection', (socket) => {
-  logger.info('Client connected', { method: 'socketConnection', socketId: socket.id, clientIp: socket.handshake.address });
+  logger.info('Client connected', { method: 'socketConnection', socketId: socket.id });
 
   socket.on('disconnect', () => {
-    logger.info('Client disconnected', { method: 'socketDisconnect', socketId: socket.id, clientIp: socket.handshake.address });
+    logger.info('Client disconnected', { method: 'socketDisconnect', socketId: socket.id });
   });
 
   socket.on('error', (error) => {
@@ -91,10 +91,30 @@ io.on('connection', (socket) => {
     logger.info('Fetching configs for socket', { method: 'socketConfigGet', socketId: socket.id });
     try {
       const configs = await configService.getAllConfigs();
-      socket.emit('config:update', serializeForSocket(configs));
+      logger.info('Sending config response', {
+        method: 'socketConfigGet',
+        socketId: socket.id,
+        regularCount: configs.regularBots.length,
+        multiCount: configs.multiBots.length,
+      });
+      socket.emit('config:response', serializeForSocket(configs)); // Changed to config:response
     } catch (error) {
       handleError(error, 'Failed to fetch configurations for socket', ErrorCodes.DB_ERROR.code, {
         method: 'socketConfigGet',
+        socketId: socket.id,
+      });
+    }
+  });
+
+  socket.on('config:edit', async (data) => {
+    logger.info('Config edit requested', { method: 'socketConfigEdit', socketId: socket.id, data });
+    try {
+      await configService.updateBotConfig(data.config.botId, data.config);
+      const configs = await configService.getAllConfigs();
+      socket.emit('config:update', serializeForSocket(configs)); // Used for edit updates
+    } catch (error) {
+      handleError(error, 'Failed to update configuration', ErrorCodes.DB_ERROR.code, {
+        method: 'socketConfigEdit',
         socketId: socket.id,
       });
     }
@@ -118,8 +138,25 @@ io.on('connection', (socket) => {
   socket.on('log', (data) => {
     logger.info('Bot log received', { method: 'socketLog', socketId: socket.id, data });
   });
-});
 
+  socket.on('transaction:get', async () => {
+    logger.info('Fetching transactions for socket', { method: 'socketTransactionGet', socketId: socket.id });
+    try {
+      const transactions = await transactionService.handleGetTransactions();
+      logger.info('Sending transaction response', {
+        method: 'socketTransactionGet',
+        socketId: socket.id,
+        transactionCount: transactions.transactions.length,
+      });
+      socket.emit('transaction:response', serializeForSocket(transactions)); // Changed to transaction:response
+    } catch (error) {
+      handleError(error, 'Failed to fetch transactions for socket', ErrorCodes.DB_ERROR.code, {
+        method: 'socketTransactionGet',
+        socketId: socket.id,
+      });
+    }
+  });
+});
 async function initializeTokens() {
   logger.info('Checking token list initialization', { method: 'initializeTokens' });
   try {

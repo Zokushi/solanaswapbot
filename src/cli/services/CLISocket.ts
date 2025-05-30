@@ -21,8 +21,8 @@ export class CLISocket {
     this.socket = io(ENV.SOCKET_URL || 'http://localhost:4000', {
       reconnection: true,
       reconnectionAttempts: this.maxReconnectAttempts,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelay: 10000,
+      reconnectionDelayMax: 30000,  
     });
     this.eventBus = new EventBus(this.socket);
     this.setupReconnectHandlers();

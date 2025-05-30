@@ -6,8 +6,7 @@ import { handleError } from '../utils/errorHandler.js';
 
 const logger = createLogger('TransactionRepository');
 
-export class TransactionRepository {
-  async createTransaction(data: LogSwapArgs) {
+   export const createTransaction = async(data: LogSwapArgs) => {
     try {
       const transaction = await prisma.transaction.create({ data });
       logger.info(`[TransactionRepository] Created transaction: ${JSON.stringify(transaction)}`);
@@ -23,16 +22,21 @@ export class TransactionRepository {
     } 
   }
 
-  async getTransactions() {
+  export const getTransactions = async() => {
     try {
+      let transaction = []
       const transactions = await prisma.transaction.findMany({
         orderBy: {
           date: 'desc',
         },
       });
-      return transactions;
+      for (const tx of transactions) {
+        transaction.push({
+          ...tx,
+        });
+      }
+      return transaction;
     } catch (error) {
-     handleError(error, 'Failed to fetch transactions', ErrorCodes.DB_ERROR.code)    
+      handleError(error, 'Failed to fetch transactions', ErrorCodes.DB_ERROR.code);
     }
   }
-} 
