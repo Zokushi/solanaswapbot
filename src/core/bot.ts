@@ -6,7 +6,7 @@ import { TradeService } from "../services/tradeService.js";
 import { NotificationService } from "../services/notificationService.js";
 import { ConfigService } from "../services/configService.js";
 import { createLogger } from "../utils/logger.js";
-
+import { handleError } from "../utils/errorHandler.js";
 const logger = createLogger('TradeBot');
 
 export class TradeBot {
@@ -82,7 +82,6 @@ export class TradeBot {
     this.notificationService = new NotificationService();
     this.configService = new ConfigService();
     this.initialize().catch((error) => {
-      logger.error(`Bot ID: ${this.botId} - Error starting bot: ${error instanceof Error ? error.message : String(error)}`);
     });
   }
 

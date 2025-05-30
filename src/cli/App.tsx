@@ -18,7 +18,6 @@ import fs from 'fs';
 import path from 'path';
 
 const logger = createLogger('CLIApp');
-const LOCK_FILE = path.join(process.cwd(), 'cli.lock');
 const CHECK_BOTS_INTERVAL = 30000; // 30 seconds
 
 const TRADE_BOT_ASCII = `
@@ -46,37 +45,7 @@ const App = () => {
   const socket = React.useMemo(() => new CLISocket(botManager), [botManager]);
   const eventBus = socket.getEventBus();
 
-  // Enforce single instance
-  React.useEffect(() => {
-    try {
-      const fd = fs.openSync(LOCK_FILE, 'wx');
-      fs.writeFileSync(fd, process.pid.toString());
-      fs.closeSync(fd);
-      logger.debug('Acquired CLI lock', { method: 'acquireLock', pid: process.pid });
 
-      return () => {
-        try {
-          if (fs.existsSync(LOCK_FILE)) {
-            const pid = fs.readFileSync(LOCK_FILE, 'utf8');
-            if (parseInt(pid) === process.pid) {
-              fs.unlinkSync(LOCK_FILE);
-              logger.debug('Released CLI lock', { method: 'releaseLock' });
-            }
-          }
-        } catch (error) {
-         handleError(
-            error,  
-            'Error releasing CLI lock',
-            ErrorCodes.UNKNOWN_ERROR.code,
-            { method: 'releaseLock', pid: process.pid }
-          );
-        }
-      };
-    } catch (error) {
-      logger.error('Failed to acquire CLI lock', { method: 'acquireLock', error: error });
-      exit();
-    }
-  }, []);
 
   // Monitor socket connection
   React.useEffect(() => {

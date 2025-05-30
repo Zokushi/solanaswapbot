@@ -4,7 +4,7 @@ import { CLISocket } from '../services/CLISocket.js';
 import { getTokenName } from '../../utils/helper.js';
 import { createLogger } from '../../utils/logger.js';
 import { handleError } from '../../utils/errorHandler.js';
-import { ErrorCodes } from '../../utils/errors.js';
+import { ErrorCodes, ErrorCode, TradeBotError } from '../../utils/errors.js';
 
 const logger = createLogger('useBotManagement');
 
