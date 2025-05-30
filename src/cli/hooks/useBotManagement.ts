@@ -69,6 +69,15 @@ export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocke
           status: 'success',
           message: 'No active bots to stop',
         });
+        // Clear progress after 2 seconds
+        setTimeout(() => {
+          setStoppingProgress({
+            current: 0,
+            total: 0,
+            status: 'idle',
+            message: '',
+          });
+        }, 2000);
         logger.info('No active bots to stop', { method: 'handleStopAllBots' });
         return;
       }
@@ -96,6 +105,15 @@ export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocke
         status: 'success',
         message: `Successfully stopped ${activeBots.length} bots`,
       }));
+      // Clear progress after 2 seconds
+      setTimeout(() => {
+        setStoppingProgress({
+          current: 0,
+          total: 0,
+          status: 'idle',
+          message: '',
+        });
+      }, 2000);
       logger.info('All bots stopped successfully', { method: 'handleStopAllBots', count: activeBots.length });
     } catch (error) {
       handleError(error, 'Failed to stop all bots', ErrorCodes.API_ERROR.code, { method: 'handleStopAllBots' });
