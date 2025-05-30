@@ -1,13 +1,13 @@
-import fetch from 'node-fetch';
-import { TradeBotError, ErrorCodes } from '../utils/error.js';
-import logger from '../utils/logger.js';
+
 import { JupiterPriceResponse } from '../core/types.js';
+import { createLogger } from '../utils/logger.js';
+import { ErrorCodes, TradeBotError } from '../utils/errors.js';
 
+const logger = createLogger('PriceService');
 
-
-export default async function getPrice(mint: string): Promise<Record<string, number>> {
+export async function getPrice(mint: string): Promise<Record<string, number>> {
   if (mint.length === 0) {
-    throw new TradeBotError('No mint addresses provided', ErrorCodes.INVALID_CONFIG);
+    throw new TradeBotError('No mint addresses provided', ErrorCodes.INVALID_CONFIG.code);
   }
 
   try {

@@ -2,7 +2,13 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import logger from '../utils/logger.js';
+import { createLogger } from '../utils/logger.js';
+import cron from 'node-cron';
+import { fetchTokenList } from '../services/tokenDataService.js';
+import { handleError } from '../utils/errorHandler.js';
+import { ErrorCodes } from '../utils/errors.js';
+
+const logger = createLogger('Config');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,7 +16,16 @@ const envPath = path.resolve(__dirname, '../../.env');
 
 // Load environment variables
 dotenv.config({ path: envPath });
-
+cron.schedule('0 0 * * *', async () => {
+  logger.info('Running scheduled token list update', { method: 'scheduledTokenUpdate' });
+  try {
+    await fetchTokenList(false);
+  } catch (error) {
+    handleError(error, 'Failed to run scheduled token update', ErrorCodes.API_ERROR.code, {
+      method: 'scheduledTokenUpdate',
+    });
+  }
+});
 function reloadEnv() {
   try {
     const envConfig = dotenv.parse(fs.readFileSync(envPath));

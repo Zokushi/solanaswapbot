@@ -1,18 +1,13 @@
 import { QuoteResponse, TradeBotConfig, NextTrade, BotData, BotStatus } from "./types.js";
-import logger from "../utils/logger.js";
-import {
-  address,
-  Address,
-  createSolanaRpcSubscriptions,
-  getAddressFromPublicKey,
-  Rpc,
-  SolanaRpcApiMainnet,
-} from "@solana/kit";
+import { address, Address, createSolanaRpcSubscriptions, getAddressFromPublicKey, Rpc, SolanaRpcApiMainnet } from "@solana/kit";
 import { getTokenDecimalsByAddress, getTokenName } from "../utils/helper.js";
 import { Socket } from "socket.io-client";
 import { TradeService } from "../services/tradeService.js";
 import { NotificationService } from "../services/notificationService.js";
 import { ConfigService } from "../services/configService.js";
+import { createLogger } from "../utils/logger.js";
+
+const logger = createLogger('TradeBot');
 
 export class TradeBot {
   // Public properties

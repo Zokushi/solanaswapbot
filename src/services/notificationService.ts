@@ -2,9 +2,11 @@
 import { Socket } from 'socket.io-client';
 import { BotData, LogSwapArgs } from '../core/types.js';
 import { formatPrice } from '../utils/helper.js';
-import logger from '../utils/logger.js';
-import getPrice from './getPrice.js';
+import { createLogger } from '../utils/logger.js';
+import {getPrice }from './getPrice.js';
 import { TransactionRepository } from './transactionRepository.js';
+
+const logger = createLogger('NotificationService');
 
 export class NotificationService {
   private transactionRepo: TransactionRepository;

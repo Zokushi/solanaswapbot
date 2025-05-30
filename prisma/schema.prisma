@@ -67,6 +67,7 @@ model Token {
   tags          Tags[]    @relation("TokenTags")
 }
 
+
 model Tags {
   id          Int       @id @default(autoincrement())
   verified    String
@@ -81,3 +82,7 @@ model Tags {
   token       Token[] @relation("TokenTags")
 }
 
+model Metadata {
+  key   String @id
+  value String
+}

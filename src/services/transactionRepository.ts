@@ -1,7 +1,10 @@
 import prisma from '../utils/prismaClient.js';
-import { TradeBotError, ErrorCodes } from '../utils/error.js';
-import logger from '../utils/logger.js';
+import { TradeBotError, ErrorCodes } from '../utils/errors.js';
 import { LogSwapArgs } from '../core/types.js';
+import { createLogger } from '../utils/logger.js';
+import { handleError } from '../utils/errorHandler.js';
+
+const logger = createLogger('TransactionRepository');
 
 export class TransactionRepository {
   async createTransaction(data: LogSwapArgs) {
@@ -12,7 +15,7 @@ export class TransactionRepository {
     } catch (error) {
       const err = new TradeBotError(
         `Error logging swap to DB: ${error instanceof Error ? error.message : String(error)}`,
-        ErrorCodes.DB_ERROR,
+        ErrorCodes.DB_ERROR.code,
         { botId: data.botId, txid: data.txid }
       );
       logger.error(err.message, err);
@@ -29,12 +32,7 @@ export class TransactionRepository {
       });
       return transactions;
     } catch (error) {
-      const err = new TradeBotError(
-        `Error fetching transactions: ${error instanceof Error ? error.message : String(error)}`,
-        ErrorCodes.DB_ERROR
-      );
-      logger.error(err.message, err);
-      throw err;
+     handleError(error, 'Failed to fetch transactions', ErrorCodes.DB_ERROR.code)    
     }
   }
 } 

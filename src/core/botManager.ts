@@ -5,12 +5,14 @@ import { TradeBotConfig, MultiBotConfig, BotResponse, BotManager, LogSwapArgs } 
 import { createRpcClients } from "../services/rpcFactory.js";
 import { getTokenDecimalsByName, getTokenAddressByName } from "../utils/helper.js";
 import { ENV } from "../config/index.js";
-import logger from "../utils/logger.js";
 import bs58 from "bs58";
 import { createKeyPairFromBytes, Address } from "@solana/kit";
 import { Config, MultiConfig, TargetAmount } from "@prisma/client";
 import { ConfigService } from "../services/configService.js";
 import { TransactionService } from "../services/transactionService.js";
+import { createLogger } from "../utils/logger.js";
+
+const logger = createLogger("DefaultBotManager");
 
 export class DefaultBotManager implements BotManager {
   public activeBots: Map<string, TradeBot> = new Map();

@@ -3,12 +3,14 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { ENV } from './config/index.js';
 import cors from 'cors';
-import logger from './utils/logger.js';
 import { ConfigService } from './services/configService.js';
-import { getSingleTokenData } from './services/tokenDataService.js';
-import { fetchTokenList } from './services/tokenDataService.js';
+import { getSingleTokenData, fetchTokenList } from './services/tokenDataService.js';
 import prisma from './utils/prismaClient.js';
+import { createLogger } from './utils/logger.js';
+import { handleError } from './utils/errorHandler.js';
+import { TradeBotError, ErrorCodes } from './utils/errors.js';
 
+const logger = createLogger('Server');
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -16,9 +18,9 @@ app.use(express.json());
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
 });
 
 const configService = new ConfigService();
@@ -28,15 +30,12 @@ const serializeForSocket = (data: any): any => {
   if (data === null || data === undefined) {
     return data;
   }
-
   if (typeof data === 'bigint') {
     return data.toString();
   }
-
   if (Array.isArray(data)) {
     return data.map(serializeForSocket);
   }
-
   if (typeof data === 'object') {
     const result: any = {};
     for (const [key, value] of Object.entries(data)) {
@@ -44,24 +43,27 @@ const serializeForSocket = (data: any): any => {
     }
     return result;
   }
-
   return data;
 };
 
 // API Endpoints
 app.get('/api/configs', async (req, res) => {
+  logger.info('Fetching all configs', { method: 'getConfigs' });
   try {
     const configs = await configService.getAllConfigs();
     res.json(serializeForSocket(configs));
   } catch (error) {
-    logger.error('Error fetching configs:', error);
-    res.status(500).json({ error: 'Failed to fetch configurations' });
+    handleError(error, 'Failed to fetch configurations', ErrorCodes.DB_ERROR.code, { method: 'getConfigs' });
   }
 });
 
 app.get('/api/token/:mint', async (req, res) => {
+  logger.info('Fetching token data', { method: 'getToken', mint: req.params.mint });
   try {
     const { mint } = req.params;
+    if (!mint) {
+      throw new TradeBotError('Mint address is required', ErrorCodes.INVALID_CONFIG.code, { method: 'getToken' });
+    }
     const tokenData = await getSingleTokenData(mint);
     if (!tokenData) {
       res.status(404).json({ error: 'Token not found' });
@@ -69,155 +71,184 @@ app.get('/api/token/:mint', async (req, res) => {
     }
     res.json(serializeForSocket(tokenData));
   } catch (error) {
-    logger.error('Error fetching token data:', error);
-    res.status(500).json({ error: 'Failed to fetch token data' });
+    handleError(error, 'Failed to fetch token data', ErrorCodes.DB_ERROR.code, { method: 'getToken', mint: req.params.mint });
   }
 });
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  logger.info('Client connected:', socket.id);
+  logger.info('Client connected', { method: 'socketConnection', socketId: socket.id, clientIp: socket.handshake.address });
 
   socket.on('disconnect', () => {
-    logger.info('Client disconnected:', socket.id);
+    logger.info('Client disconnected', { method: 'socketDisconnect', socketId: socket.id, clientIp: socket.handshake.address });
   });
 
   socket.on('error', (error) => {
-    logger.error('Socket error:', error);
+    handleError(error, 'Socket error', ErrorCodes.API_ERROR.code, { method: 'socketError', socketId: socket.id });
   });
 
-  // Handle config requests
   socket.on('config:get', async () => {
+    logger.info('Fetching configs for socket', { method: 'socketConfigGet', socketId: socket.id });
     try {
       const configs = await configService.getAllConfigs();
       socket.emit('config:update', serializeForSocket(configs));
     } catch (error) {
-      logger.error('Error fetching configs for socket:', error);
-      socket.emit('error', { message: 'Failed to fetch configurations' });
+      handleError(error, 'Failed to fetch configurations for socket', ErrorCodes.DB_ERROR.code, {
+        method: 'socketConfigGet',
+        socketId: socket.id,
+      });
     }
   });
 
-  // Handle bot events
   socket.on('bot:start', (data) => {
-    logger.info('Bot start requested:', serializeForSocket(data));
+    logger.info('Bot start requested', { method: 'socketBotStart', socketId: socket.id, data });
     socket.emit('bot:start', serializeForSocket(data));
   });
 
   socket.on('bot:stop', (data) => {
-    logger.info('Bot stop requested:', serializeForSocket(data));
+    logger.info('Bot stop requested', { method: 'socketBotStop', socketId: socket.id, data });
     socket.emit('bot:stop', serializeForSocket(data));
   });
 
   socket.on('bot:difference', (data) => {
-    // Broadcast the difference update to all connected clients
+    logger.info('Bot difference update', { method: 'socketBotDifference', socketId: socket.id });
     io.emit('bot:difference', serializeForSocket(data));
   });
 
   socket.on('log', (data) => {
-    // Only log to server, don't broadcast to clients
-    logger.info('Bot log:', serializeForSocket(data));
+    logger.info('Bot log received', { method: 'socketLog', socketId: socket.id, data });
   });
 });
 
-// Start the server
-const PORT = ENV.PORT || 4000;
-const server = httpServer.listen(PORT, async () => {
-  logger.info(`Server running on port ${PORT}`);
+async function initializeTokens() {
+  logger.info('Checking token list initialization', { method: 'initializeTokens' });
   try {
-    await fetchTokenList(false); // Force update on server startup
-    logger.info('Token list initialized');
+    await prisma.$connect();
+    logger.debug('Database connection established', { method: 'initializeTokens' });
+
+    const metadata = await prisma.metadata.findUnique({
+      where: { key: 'tokens_seeded' },
+    });
+
+    if (metadata?.value === 'true') {
+      const tokenCount = await prisma.token.count();
+      logger.info('Token list already seeded', { method: 'initializeTokens', tokenCount });
+      if (tokenCount === 0) {
+        logger.warn('Tokens seeded flag set but no tokens found, resetting flag', { method: 'initializeTokens' });
+        await prisma.metadata.delete({ where: { key: 'tokens_seeded' } });
+      } else {
+        return;
+      }
+    }
+
+    logger.info('No seeding record found, checking token count', { method: 'initializeTokens' });
+    const tokenCount = await prisma.token.count();
+    if (tokenCount === 0) {
+      logger.info('No tokens found, seeding initial token list', { method: 'initializeTokens' });
+      const lock = await prisma.metadata.upsert({
+        where: { key: 'token_seed_lock' },
+        update: { value: 'locked' },
+        create: { key: 'token_seed_lock', value: 'locked' },
+      });
+
+      if (lock.value !== 'locked') {
+        logger.info('Token seeding already in progress, skipping', { method: 'initializeTokens' });
+        return;
+      }
+
+      try {
+        await fetchTokenList(true);
+        const newTokenCount = await prisma.token.count();
+        logger.info('Token list seeded successfully', { method: 'initializeTokens', newTokenCount });
+        if (newTokenCount === 0) {
+          throw new TradeBotError('Seeding completed but no tokens inserted', ErrorCodes.DB_ERROR.code, {
+            method: 'initializeTokens',
+          });
+        }
+        await prisma.metadata.upsert({
+          where: { key: 'tokens_seeded' },
+          update: { value: 'true' },
+          create: { key: 'tokens_seeded', value: 'true' },
+        });
+      } finally {
+        await prisma.metadata.delete({ where: { key: 'token_seed_lock' } });
+      }
+    } else {
+      logger.info('Tokens found, marking as seeded', { method: 'initializeTokens', count: tokenCount });
+      await prisma.metadata.upsert({
+        where: { key: 'tokens_seeded' },
+        update: { value: 'true' },
+        create: { key: 'tokens_seeded', value: 'true' },
+      });
+    }
   } catch (error) {
-    logger.error('Failed to initialize token list:', error);
+    handleError(error, 'Failed to initialize token list', ErrorCodes.DB_ERROR.code, { method: 'initializeTokens' });
+  }
+}
+
+const PORT = ENV.PORT || 4000;
+httpServer.listen(PORT, async () => {
+  logger.info(`Server running on port ${PORT}`, { method: 'startServer' });
+  try {
+    await initializeTokens();
+  } catch (error) {
+    logger.error('Server startup failed due to token initialization error', { method: 'startServer', error });
+    process.exit(1);
   }
 });
 
-// Handle cleanup and graceful shutdown
 export const cleanup = async () => {
-  logger.info('Starting server shutdown...');
-
-  // Set a timeout to force shutdown if cleanup takes too long
+  logger.info('Starting server shutdown', { method: 'cleanup' });
   const forceShutdown = setTimeout(() => {
-    logger.error('Forced shutdown after timeout');
+    logger.error('Forced shutdown after timeout', { method: 'cleanup' });
     process.exit(1);
-  }, 10000); // 10 seconds timeout
+  }, 10000);
 
   try {
-    // Stop accepting new connections
-    logger.info('Stopping new connections...');
-    server.close();
+    logger.info('Stopping new connections', { method: 'cleanup' });
+    httpServer.close();
 
-    // Close all socket connections
-    logger.info('Closing socket connections...');
+    logger.info('Closing socket connections', { method: 'cleanup' });
     if (io) {
-      // Disconnect all clients
       io.sockets.sockets.forEach((socket) => {
         socket.disconnect(true);
       });
       io.close();
     }
 
-    // Give some time for existing connections to close
-    logger.info('Waiting for existing connections to close...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    logger.info('Waiting for existing connections to close', { method: 'cleanup' });
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // Close the HTTP server
-    if (server) {
-      logger.info('Closing HTTP server...');
-      await new Promise<void>((resolve, reject) => {
-        server.close((err) => {
-          if (err) {
-            logger.error('Error closing HTTP server:', err);
-            reject(err);
-          } else {
-            logger.info('HTTP server closed successfully');
-            resolve();
-          }
-        });
-      });
-    }
-
-    // Disconnect from database
-    logger.info('Disconnecting from database...');
+    logger.info('Disconnecting from database', { method: 'cleanup' });
     await prisma.$disconnect();
-    logger.info('Database disconnected successfully');
+    logger.info('Database disconnected successfully', { method: 'cleanup' });
 
-    // Clear the force shutdown timeout
     clearTimeout(forceShutdown);
-
-    logger.info('Server shutdown complete');
+    logger.info('Server shutdown complete', { method: 'cleanup' });
     process.exit(0);
   } catch (error) {
-    logger.error('Error during cleanup:', error);
-    process.exit(1);
+    handleError(error, 'Error during cleanup', ErrorCodes.API_ERROR.code, { method: 'cleanup' });
   }
 };
 
-// Handle signals
 const handleSignal = async (signal: string) => {
-  logger.info(`Received ${signal} signal`);
-  // Remove all listeners to prevent multiple cleanup calls
+  logger.info(`Received ${signal} signal`, { method: 'handleSignal' });
   process.removeAllListeners('SIGINT');
   process.removeAllListeners('SIGTERM');
   await cleanup();
 };
 
-// Set max listeners to a reasonable number
 process.setMaxListeners(20);
-
-// Remove any existing listeners first
 process.removeAllListeners('SIGINT');
 process.removeAllListeners('SIGTERM');
 
 process.on('SIGINT', () => handleSignal('SIGINT'));
 process.on('SIGTERM', () => handleSignal('SIGTERM'));
 
-// Handle uncaught errors
 process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', error);
-  cleanup();
+  handleError(error, 'Uncaught Exception', ErrorCodes.API_ERROR.code, { method: 'uncaughtException' });
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  cleanup();
-}); 
+  handleError(reason, 'Unhandled Rejection', ErrorCodes.API_ERROR.code, { method: 'unhandledRejection', promise });
+});

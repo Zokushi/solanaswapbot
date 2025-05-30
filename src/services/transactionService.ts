@@ -1,6 +1,8 @@
 import { Socket } from 'socket.io-client';
 import { TransactionRepository } from './transactionRepository.js';
-import logger from '../utils/logger.js';
+import { createLogger } from '../utils/logger.js';
+
+const logger = createLogger('TransactionService');
 
 export class TransactionService {
   private transactionRepo: TransactionRepository;

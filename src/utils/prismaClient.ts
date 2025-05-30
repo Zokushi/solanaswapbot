@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
-import logger from "./logger.js";
+import { createLogger } from "./logger.js";
 import path from "path";
 import { fileURLToPath } from "url";
+
+const logger = createLogger("PrismaClient");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

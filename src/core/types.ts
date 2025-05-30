@@ -205,6 +205,22 @@ interface QuoteResponse {
   timeTaken?: number;
 }
 
+export interface ConfigData {
+  botId: string;
+  initialInputToken: string;
+  initialOutputToken?: string;
+  initialInputAmount: number;
+  firstTradePrice?: number;
+  targetGainPercentage: number;
+  stopLossPercentage?: number;
+  checkInterval?: number;
+  status?: BotStatus;
+}
+
+export interface MultiConfigData extends ConfigData {
+  targetAmounts: Array<{ tokenAddress: string; amount: number }>;
+}
+
 interface QuicknodeRpcConfig {
   wssEndpoint: string;
 }
@@ -302,7 +318,10 @@ export interface ConfigListState {
     }>;
   }>;
 }
-
+export interface RpcClients {
+  rpc: Rpc<SolanaRpcApiMainnet>;
+  subscriptions: ReturnType<typeof createSolanaRpcSubscriptions>;
+}
 export interface BotInitializer {
   initializeBot(config: Partial<TradeBotConfig>, socket: Socket): Promise<TradeBot>;
   initializeMultiBot(config: Partial<MultiBotConfig>, socket: Socket): Promise<MultiBot>;
@@ -343,6 +362,13 @@ export interface DashboardProps {
   onRefresh: () => void;
 }
 
+export interface Repository<T> {
+  create(data: Partial<T>): Promise<T>;
+  update(id: string, data: Partial<T>): Promise<T>;
+  delete(id: string): Promise<T>;
+  findById(id: string): Promise<T | null>;
+  findAll(): Promise<T[]>;
+}
 export interface ConfigListProps {
   socket: Socket;
   botManager: BotManager;

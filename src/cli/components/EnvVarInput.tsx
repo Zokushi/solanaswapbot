@@ -5,7 +5,9 @@ import { writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import logger from '../../utils/logger.js';
+import { createLogger } from '../../utils/logger.js';
+
+const logger = createLogger('EnvVarInput');
 
 interface EnvVarInputProps {
   onComplete: () => void;

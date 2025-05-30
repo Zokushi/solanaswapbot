@@ -2,7 +2,7 @@ import { MultiBot } from '../../core/multibot.js';
 import { ConfigService } from '../../services/configService.js';
 import { TradeService } from '../../services/tradeService.js';
 import { NotificationService } from '../../services/notificationService.js';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import { Address, createKeyPairFromBytes, getAddressFromPublicKey } from '@solana/kit';
 import { jest } from '@jest/globals';
 import { QuoteResponse } from '../../core/types.js';

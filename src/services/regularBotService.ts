@@ -1,7 +1,8 @@
 import { RegularConfigRepository } from './configRepository.js';
-import logger from '../utils/logger.js';
+import { createLogger } from '../utils/logger.js';
 import { Config } from '@prisma/client';
 
+const logger = createLogger('RegularBotService');
 /**
  * RegularBotService handles configuration management for regular trading bots.
  * 

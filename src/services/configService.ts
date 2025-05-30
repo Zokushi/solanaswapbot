@@ -2,7 +2,9 @@ import { Config, MultiConfig, TargetAmount } from '@prisma/client';
 import { RegularConfigRepository } from './configRepository.js';
 import { MultiConfigRepository } from './configRepository.js';
 import { BigIntUtils, BotStatus } from '../core/types.js';
-import logger from '../utils/logger.js';
+import { createLogger } from '../utils/logger.js';
+
+const logger = createLogger('ConfigService');
 
 export class RegularConfigService {
   private repository: RegularConfigRepository;
@@ -170,7 +172,6 @@ export class ConfigService {
       this.regularService.getAllConfigs(),
       this.multiService.getAllConfigs()
     ]);
-
     return { regularBots, multiBots };
   }
 }

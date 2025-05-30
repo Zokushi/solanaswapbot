@@ -1,11 +1,13 @@
 import { QuoteResponse, BotData, MultiBotConfig, BotStatus } from "./types.js";
-import logger from "../utils/logger.js";
 import { address, Address, createSolanaRpcSubscriptions, getAddressFromPublicKey, Rpc, SolanaRpcApiMainnet } from "@solana/kit";
 import { getTokenDecimalsByAddress, getTokenDecimalsByAddressRaw, getTokenName } from "../utils/helper.js";
 import { TradeService } from "../services/tradeService.js";
 import { NotificationService } from "../services/notificationService.js";
 import { ConfigService } from "../services/configService.js";
 import { Socket } from "socket.io-client";
+import { createLogger } from "../utils/logger.js";
+
+const logger = createLogger('MultiBot');
 
 /**
  * Manages automated trading operations for a specific bot instance on the Solana blockchain.

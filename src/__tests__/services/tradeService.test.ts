@@ -4,12 +4,10 @@ import { QuoteResponse, QuoteGetRequest } from '../../core/types.js';
 import { Rpc, Address, SolanaRpcApiMainnet } from '@solana/kit';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { jest } from '@jest/globals';
-import fetch from 'node-fetch';
-import { TradeBotError, ErrorCodes } from '../../utils/error.js';
+import { TradeBotError, ErrorCodes } from '../../utils/errors.js';
 import logger from '../../utils/logger.js';
 
 // Mock dependencies
-jest.mock('node-fetch');
 jest.mock('@solana/kit');
 jest.mock('../../utils/logger');
 jest.mock('../../utils/error', () => ({

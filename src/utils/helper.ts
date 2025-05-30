@@ -1,8 +1,10 @@
 // tokenService.ts
 import NodeCache from "node-cache";
 import { ENV } from "../config/index.js";
-import logger from "./logger.js";
 import prisma from "./prismaClient.js";
+import { createLogger } from "./logger.js";
+
+const logger = createLogger("TokenService");
 
 /**
  * Fetches the decimals for a token by its name.

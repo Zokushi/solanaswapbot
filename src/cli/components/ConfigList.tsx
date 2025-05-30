@@ -4,9 +4,55 @@ import { shortenUUID } from '../../utils/helper.js';
 import { ConfigListProps, SortField, SortDirection, FilterType, BotWithType, ConfigListState, BotStatus } from '../../core/types.js';
 import { getSingleTokenData } from '../../services/tokenDataService.js';
 import { useAppContext } from '../context/AppContext.js';
-import { ConfigData } from '../../services/eventBus.js';
-import logger from '../../utils/logger.js';
 import { useApp } from 'ink';
+import { createLogger } from '../../utils/logger.js';
+
+const logger = createLogger('ConfigList');
+
+
+export type BotData = {
+  botId: string;
+  status: string;
+  inputMint: string;
+  outputMint: string;
+  currentPrice: number;
+  targetTrade: number;
+  difference: number;
+  ratio: number;
+  trades: number;
+  tokenInPrice?: number;
+  tokenOutPrice?: number;
+  targetMint?: string;
+  targetAmounts?: any[];
+};
+
+export type ConfigData = {
+  regularBots: Array<{
+    botId: string;
+    initialInputToken: string;
+    initialOutputToken: string;
+    initialInputAmount: number;
+    firstTradePrice: number | bigint;
+    targetGainPercentage: number;
+    stopLossPercentage?: number;
+    status: string;
+  }>;
+  multiBots: Array<{
+    botId: string;
+    initialInputToken: string;
+    initialInputAmount: number;
+    targetGainPercentage: number;
+    stopLossPercentage?: number;
+    checkInterval?: number;
+    status: string;
+    targetAmounts: Array<{
+      id: string;
+      configId: string;
+      tokenAddress: string;
+      amount: number;
+    }>;
+  }>;
+};
 
 export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
   const { cliSocket } = useAppContext();
@@ -35,12 +81,22 @@ export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
   }, [eventBus]);
 
   React.useEffect(() => {
-    const handleConfigUpdate = (data: ConfigData) => {
+    const handleConfigUpdate = (data: unknown) => {
       try {
-        logger.info('Received config update:', data);
-        setConfigs(data);
-        setError(null);
-        setLoading(false);
+        // Type guard to check if data is ConfigData
+        if (
+          typeof data === 'object' &&
+          data !== null &&
+          'regularBots' in data &&
+          'multiBots' in data
+        ) {
+          logger.info('Received config update:', data);
+          setConfigs(data as ConfigData);
+          setError(null);
+          setLoading(false);
+        } else {
+          throw new Error('Invalid config data received');
+        }
       } catch (error) {
         logger.error('Failed to process configs:', error);
         setError('Failed to process configurations');

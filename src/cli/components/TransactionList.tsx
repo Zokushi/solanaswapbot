@@ -3,8 +3,10 @@ import { Box, Text, useApp, useInput } from 'ink';
 import { Transaction } from '@prisma/client';
 import { shortenUUID } from '../../utils/helper.js';
 import { useAppContext } from '../context/AppContext.js';
-import logger from '../../utils/logger.js';
 import { Socket } from 'socket.io-client';
+import { createLogger } from '../../utils/logger.js';
+
+const logger = createLogger('TransactionList');
 
 interface TransactionListProps {
   height?: number;

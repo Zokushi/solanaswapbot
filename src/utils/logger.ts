@@ -1,8 +1,7 @@
 import winston from 'winston';
-import chalk from 'chalk';  
-import { TradeBotError } from './error.js';
 import path from 'path';
 import fs from 'fs';
+import DailyRotateFile from 'winston-daily-rotate-file';
 
 // Ensure logs directory exists
 const logsDir = path.join(process.cwd(), 'logs');
@@ -10,73 +9,106 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-winston.addColors({
-  info: 'green',
-  warn: 'yellow',
-  error: 'red',
-  component: 'cyan',
-  fetching: 'blue',
-  balance: 'magenta',
-  trade: 'bold green',
-  separator: 'gray',
-});
+const customLevels = {
+  levels: {
+    error: 0,
+    warn: 1,
+    info: 2,
+    debug: 3, // Added debug level
+    component: 4,
+    fetching: 5,
+    balance: 6,
+    trade: 7,
+    separator: 8,
+  },
+  colors: {
+    info: 'green',
+    warn: 'yellow',
+    error: 'red',
+    component: 'cyan',
+    fetching: 'blue',
+    balance: 'magenta',
+    trade: 'bold green',
+    separator: 'gray',
+  },
+};
 
-// File format without colors
-const fileFormat = winston.format.printf(({ level, message, timestamp, ...meta }) => {
-  const componentTagMatch = typeof message === 'string' ? message.match(/^\[.*?\]/) : null;
-  const componentTag = componentTagMatch ? componentTagMatch[0] : '';
-  const messageBody = componentTagMatch
-    ? (typeof message === 'string' ? message.slice(componentTag.length).trim() : String(message))
-    : (typeof message === 'string' ? message : String(message));
+winston.addColors(customLevels.colors);
 
-  let errorDetails = '';
-  if (meta.error instanceof TradeBotError) {
-    const err = meta.error as TradeBotError;
-    errorDetails = `\n  Code: ${err.code}\n  Details: ${JSON.stringify(err.details, null, 2)}`;
-  } else if (meta.error && typeof meta.error === 'object') {
-    errorDetails = `\n  Details: ${JSON.stringify(meta.error, null, 2)}`;
-  }
+// Structured JSON format for file logging
+const jsonFormat = winston.format.combine(
+  winston.format.timestamp({ format: 'YYYY-MM-DD[T]HH:mm:ss.SSS[Z]' }),
+  winston.format.json()
+);
 
-  return `${timestamp} [${level.toUpperCase()}] ${componentTag} ${messageBody}${errorDetails}`;
-});
+// Pretty-printed format for console (for development)
+const consoleFormat = winston.format.combine(
+  winston.format.colorize(),
+  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  winston.format.printf(({ level, message, timestamp, service = 'unknown', ...metadata }) => {
+    const componentTagMatch = typeof message === 'string' ? message.match(/^\[.*?\]/) : null;
+    const componentTag = componentTagMatch ? componentTagMatch[0] : '';
+    const messageBody = componentTagMatch
+      ? (message as string).slice(componentTag.length).trim()
+      : message;
 
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
-  format: winston.format.combine(
-    winston.format.timestamp({ format: 'YYYY-MM-DD[T]HH:mm:ss.SSS[Z]' }),
-    winston.format.errors({ stack: true })
-  ),
+    let errorDetails = '';
+    if (metadata.error) {
+      errorDetails = `\n  Details: ${JSON.stringify(metadata.error, null, 2)}`;
+    }
+
+    return `${timestamp} [${level.toUpperCase()}] [${service}] ${componentTag} ${messageBody}${errorDetails}`;
+  })
+);
+
+export interface LogMetadata {
+  service?: string;
+  botId?: string;
+  method?: string;
+  error?: Record<string, any>;
+  [key: string]: any;
+}
+
+export const logger = winston.createLogger({
+  levels: customLevels.levels,
+  level: process.env.LOG_LEVEL || 'debug', // Allow debug logs
+  format: winston.format.combine(winston.format.errors({ stack: true }), jsonFormat),
   transports: [
-    // Silent transport to suppress all console output
     new winston.transports.Console({
-      silent: true
+      format: consoleFormat,
+      silent: true,
     }),
-    // Error log file - only for actual errors
     new winston.transports.File({
       filename: path.join(logsDir, 'error.log'),
       level: 'error',
-      format: fileFormat,
       maxsize: 5242880, // 5MB
       maxFiles: 5,
-      tailable: true
+      tailable: true,
     }),
-    // Combined log file - for all levels
     new winston.transports.File({
       filename: path.join(logsDir, 'combined.log'),
-      format: fileFormat,
-      maxsize: 5242880, // 5MB
+      maxsize: 5242880,
       maxFiles: 5,
-      tailable: true
+      tailable: true,
     }),
-    // Daily rotating file - for all levels
-    new winston.transports.File({
+    new DailyRotateFile({
       filename: path.join(logsDir, 'daily-%DATE%.log'),
-      format: fileFormat,
-      maxsize: 5242880, // 5MB
-      maxFiles: 14, // Keep logs for 14 days
-      tailable: true
-    })
-  ]
+      datePattern: 'YYYY-MM-DD',
+      zippedArchive: true,
+      maxSize: '5m',
+      maxFiles: '14d',
+      format: jsonFormat,
+    }),
+  ],
 });
 
-export default logger;
+export type CustomLogger = winston.Logger & {
+  info: (message: string, meta?: LogMetadata) => void;
+  warn: (message: string, meta?: LogMetadata) => void;
+  error: (message: string, meta?: LogMetadata) => void;
+  debug: (message: string, meta?: LogMetadata) => void; // Added debug
+};
+
+export function createLogger(service: string): CustomLogger {
+  return logger.child({ service }) as CustomLogger;
+}

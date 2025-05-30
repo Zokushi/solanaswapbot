@@ -1,8 +1,8 @@
 import { MultiConfigRepository } from './configRepository.js';
-import logger from '../utils/logger.js';
+import { createLogger } from '../utils/logger.js';
 import { MultiConfig, TargetAmount } from '@prisma/client';
-import { BigIntUtils } from '../core/types.js';
 
+const logger = createLogger('MultiBotService');
 /**
  * MultiBotService handles configuration management for multi-token trading bots.
  * 

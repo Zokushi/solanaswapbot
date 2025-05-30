@@ -1,21 +1,9 @@
-import {
-  createRpc,
-  createSolanaRpcApi,
-  createDefaultRpcTransport,
-  createSolanaRpcSubscriptions,
-  mainnet,
-  ClusterUrl,
-  SolanaRpcApiMainnet,
-  Rpc,
-} from "@solana/kit";
-import logger from "../utils/logger.js";
+import { createRpc, createSolanaRpcApi, createDefaultRpcTransport, createSolanaRpcSubscriptions, mainnet, ClusterUrl, SolanaRpcApiMainnet, Rpc} from "@solana/kit";
+import  { createLogger } from "../utils/logger.js";
+import { RpcClients } from "../core/types.js";
+import { replacer } from "../utils/replacer.js";
 
-export interface RpcClients {
-  rpc: Rpc<SolanaRpcApiMainnet>;
-  subscriptions: ReturnType<typeof createSolanaRpcSubscriptions>;
-}
-
-const replacer = (key: string, value: any) => (typeof value === "bigint" ? value.toString() : value);
+const logger = createLogger("RpcFactory");
 
 export async function createRpcClients(config: { solanaEndpoint: string; wssEndpoint: ClusterUrl }): Promise<RpcClients> {
   logger.info(`[RpcFactory] Creating RPC clients with solanaEndpoint: ${config.solanaEndpoint}, wssEndpoint: ${config.wssEndpoint}`);
@@ -69,6 +57,7 @@ export async function createRpcClients(config: { solanaEndpoint: string; wssEndp
       logger.info(`[RpcFactory] RPC test successful: ${JSON.stringify(blockhash, replacer)}`);
     } catch (err) {
       logger.warn(`[RpcFactory] RPC connectivity test failed: ${err instanceof Error ? err.message : String(err)}`);
+      throw new Error("RPC connectivity test failed");
     }
 
     return { rpc, subscriptions };

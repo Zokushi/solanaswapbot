@@ -1,6 +1,8 @@
 import { fetchTokenList } from '../services/tokenDataService.js';
-import logger from '../utils/logger.js';
 import prisma from '../utils/prismaClient.js';
+import { createLogger } from '../utils/logger.js';
+
+const logger = createLogger('SeedTokensScript');
 
 async function seedTokens() {
   try {

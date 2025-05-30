@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import fs from 'fs';
+import { createLogger } from './src/utils/logger.js';
+
+const logger = createLogger('RunCLI');
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const LOCK_FILE = join(process.cwd(), 'cli.lock');
+
+// Enforce single CLI instance
+function acquireLock() {
+  try {
+    const fd = fs.openSync(LOCK_FILE, 'wx');
+    fs.writeFileSync(fd, process.pid.toString());
+    fs.closeSync(fd);
+    logger.debug('Acquired CLI lock', { method: 'acquireLock', pid: process.pid });
+    return true;
+  } catch (error) {
+    logger.error('Another CLI instance is running', { method: 'acquireLock', error: error.message });
+    console.error('Error: Another CLI instance is already running');
+    process.exit(1);
+  }
+}
+
+function releaseLock() {
+  try {
+    if (fs.existsSync(LOCK_FILE)) {
+      const pid = fs.readFileSync(LOCK_FILE, 'utf8');
+      if (parseInt(pid) === process.pid) {
+        fs.unlinkSync(LOCK_FILE);
+        logger.debug('Released CLI lock', { method: 'releaseLock', pid });
+      }
+    }
+  } catch (error) {
+    logger.error('Failed to release CLI lock', { method: 'releaseLock', error: error.message });
+  }
+}
+
+const tsxPath = join(process.cwd(), 'node_modules', '.bin', 'tsx.cmd');
+const cliPath = join(process.cwd(), 'src', 'cli.ts');
+
+if (!fs.existsSync(tsxPath)) {
+  logger.error('tsx.cmd not found', { method: 'startCLI', tsxPath });
+  console.error(`Error: tsx.cmd not found at ${tsxPath}. Ensure dependencies are installed.`);
+  process.exit(1);
+}
+
+acquireLock();
+
+const cli = spawn(tsxPath, [cliPath], {
+  stdio: 'inherit',
+  env: {
+    ...process.env,
+    FORCE_COLOR: '1',
+    LOG_LEVEL: 'debug',
+  },
+  shell: true,
+});
+
+cli.on('error', (err) => {
+  logger.error('Failed to start CLI', { method: 'startCLI', error: err.message });
+  console.error('Failed to start CLI:', err);
+  releaseLock();
+  process.exit(1);
+});
+
+cli.on('exit', (code) => {
+  logger.info('CLI process exited', { method: 'exitCLI', code });
+  releaseLock();
+  process.exit(code || 0);
+});
+
+process.on('SIGINT', () => {
+  logger.info('Received SIGINT, shutting down CLI', { method: 'shutdown' });
+  cli.kill('SIGINT');
+});
+
+process.on('SIGTERM', () => {
+  logger.info('Received SIGTERM, shutting down CLI', { method: 'shutdown' });
+  cli.kill('SIGTERM');
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception in run-cli', { method: 'uncaughtException', error: error.message });
+  releaseLock();
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled rejection in run-cli', { method: 'unhandledRejection', reason });
+  releaseLock();
+  process.exit(1);
+});

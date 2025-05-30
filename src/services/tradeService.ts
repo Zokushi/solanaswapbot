@@ -1,30 +1,19 @@
 import { QuoteGetRequest, QuoteResponse } from "../core/types.js";
-import { TradeBotError, ErrorCodes, logError } from "../utils/error.js";
-import {
-  getAddressFromPublicKey,
-  getTransactionDecoder,
-  signTransaction,
-  assertTransactionIsFullySigned,
-  getSignatureFromTransaction,
-  SolanaRpcSubscriptionsApi,
-  RpcSubscriptions,
-  sendAndConfirmTransactionFactory,
-  Rpc,
-  Address,
-  SolanaRpcApiMainnet,
-  Signature,
-  address,
-} from "@solana/kit";
+import { ErrorCodes,TradeBotError } from "../utils/errors.js";
+import { handleError } from "../utils/errorHandler.js";
+import { getAddressFromPublicKey, getTransactionDecoder, signTransaction, assertTransactionIsFullySigned, getSignatureFromTransaction, SolanaRpcSubscriptionsApi, RpcSubscriptions, sendAndConfirmTransactionFactory, Rpc, Address, SolanaRpcApiMainnet, Signature, address } from "@solana/kit";
 import dotenv from "dotenv";
-import fetch from "node-fetch";
 import { PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from "@solana/spl-token";
-import logger from "../utils/logger.js";
+import  { createLogger } from "../utils/logger.js";
 import NodeCache from 'node-cache';
-const cache = new NodeCache({ stdTTL: 300 }); // 5-minute TTL
+import { replacer } from "../utils/replacer.js";
+
 dotenv.config();
 
-const replacer = (key: string, value: any) => (typeof value === "bigint" ? value.toString() : value);
+const logger = createLogger('TradeService');
+const cache = new NodeCache({ stdTTL: 300 }); // 5-minute TTL
+
 
 export class TradeService {
   private readonly baseUrl: string = "https://lite-api.jup.ag/swap/v1";
@@ -37,15 +26,14 @@ export class TradeService {
     public postTransactionProcessing: (route: QuoteResponse, signature: string) => Promise<void>,
     public setwaitingForConfirmation: (flag: boolean) => void
   ) {
-    if (!rpc) {
-      throw new TradeBotError('RPC client is undefined', ErrorCodes.INVALID_CONFIG, { botId: botId.toString() });
+   if (!rpc) {
+      handleError(null, 'RPC client is undefined', ErrorCodes.INVALID_CONFIG.code, { botId });
     }
     if (!subscriptions) {
-      throw new TradeBotError('Subscriptions client is undefined', ErrorCodes.INVALID_CONFIG, { botId: botId.toString() });
+      handleError(null, 'Subscriptions client is undefined', ErrorCodes.INVALID_CONFIG.code, { botId });
     }
-
     if (!wallet.publicKey) {
-      throw new TradeBotError('Wallet public key is undefined', ErrorCodes.WALLET_ERROR, { botId: botId.toString() });
+      handleError(null, 'Wallet public key is undefined', ErrorCodes.WALLET_ERROR.code, { botId });
     }
   }
 
@@ -56,30 +44,28 @@ export class TradeService {
       logger.info(`[TradeService] Returning cached token account: ${cached}`);
       return cached;
     }
-    logger.warn(`[TradeService] Fetching filtered token accounts for wallet: ${wallet}, mint: ${mint}`);
+    logger.info(`[TradeService] Fetching filtered token accounts for wallet: ${wallet}, mint: ${mint}`);
     try {
       const response = await this.rpc.getTokenAccountsByOwner(address(wallet), { mint: mint }, { encoding: "jsonParsed" }).send();
       const accountData = response.value[0]?.account?.data?.parsed?.info;
       const uiAmountString = accountData?.tokenAmount?.uiAmountString;
       logger.warn(`[TradeService] Available balance: ${uiAmountString}`);
       if (!response.value || response.value.length === 0) {
-        throw new TradeBotError(`No token account found for mint ${mint}`, ErrorCodes.TOKEN_ACCOUNT_ERROR, { mint });
+        throw new TradeBotError(`No token account found for mint ${mint}`, ErrorCodes.TOKEN_ACCOUNT_ERROR.code, { mint });
       }
 
       const tokenAccount = response.value[0].pubkey;
       if (!tokenAccount || typeof tokenAccount !== 'string') {
-        throw new TradeBotError(`Invalid token account public key`, ErrorCodes.TOKEN_ACCOUNT_ERROR, { mint, pubkey: tokenAccount });
+        throw new TradeBotError(`Invalid token account public key`, ErrorCodes.TOKEN_ACCOUNT_ERROR.code, { mint, pubkey: tokenAccount });
       }
 
       logger.warn(`[TradeService] Selected token account: ${tokenAccount}`);
       cache.set(cacheKey, tokenAccount);
       return tokenAccount;
-    } catch (err) {
-      const error = logError(err, 'TradeService');
-      throw error;
+    } catch (error) {
+      handleError(error, `Error fetching token accounts for wallet ${wallet} and mint ${mint}`, ErrorCodes.TOKEN_ACCOUNT_ERROR.code, { wallet, mint });
     }
   }
-
   async getTokenAccountBalance(mint: string): Promise<string> {
     if (!this.wallet || !this.wallet.publicKey) {
       throw new Error("Wallet is not initialized or public key is missing");
@@ -187,7 +173,7 @@ export class TradeService {
         const errorText = await response.text();
         throw new TradeBotError(
           `HTTP error fetching quote: ${response.status} ${response.statusText} - ${errorText}`,
-          ErrorCodes.QUOTE_FETCH_ERROR,
+          ErrorCodes.QUOTE_FETCH_ERROR.code,
           { 
             status: response.status,
             statusText: response.statusText,
@@ -199,14 +185,14 @@ export class TradeService {
 
       const quote = await response.json() as QuoteResponse;
       if (!quote || !quote.outAmount) {
-        throw new TradeBotError('Invalid quote response: Missing outAmount', ErrorCodes.QUOTE_FETCH_ERROR, { response: quote });
+        throw new TradeBotError('Invalid quote response: Missing outAmount', ErrorCodes.QUOTE_FETCH_ERROR.code, { response: quote });
       }
 
       return quote;
     } catch (err) {
       const error = err instanceof TradeBotError ? err : new TradeBotError(
         `Failed to fetch quote: ${err instanceof Error ? err.message : String(err)}`,
-        ErrorCodes.QUOTE_FETCH_ERROR,
+        ErrorCodes.QUOTE_FETCH_ERROR.code,
         { quoteRequest }
       );
       logger.error(`[TradeService] ${error.message}`, error);
@@ -216,7 +202,7 @@ export class TradeService {
 
   public async evaluateQuoteAndSwap(quote: QuoteResponse, thresholdPrice: number, forceSwap: boolean = false): Promise<boolean> {
     if (!quote || !quote.outAmount) {
-      throw new TradeBotError('Invalid quote response: Missing outAmount', ErrorCodes.QUOTE_FETCH_ERROR, { response: quote });
+      throw new TradeBotError('Invalid quote response: Missing outAmount', ErrorCodes.QUOTE_FETCH_ERROR.code, { response: quote });
     }
 
     const currentPrice = parseInt(quote.outAmount);
@@ -242,7 +228,7 @@ export class TradeService {
 
       const pubKey = await getAddressFromPublicKey(this.wallet.publicKey);
       if (!pubKey) {
-        throw new TradeBotError('Error fetching public key', ErrorCodes.WALLET_ERROR);
+        throw new TradeBotError('Error fetching public key', ErrorCodes.WALLET_ERROR.code);
       }
 
       const feeAccount = await this.ata(route);
@@ -288,7 +274,7 @@ export class TradeService {
         err instanceof Error && err.name === "AbortError"
           ? `Transaction timed out: ${err.message}`
           : `Swap execution failed: ${err instanceof Error ? err.message : String(err)}`,
-        ErrorCodes.SWAP_EXECUTION_ERROR,
+        ErrorCodes.SWAP_EXECUTION_ERROR.code,
         { route }
       );
       logger.error(`❌ [TradeService] ${error.message}`, error);
