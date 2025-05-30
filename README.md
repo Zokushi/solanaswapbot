@@ -1,161 +1,168 @@
-# Solana Trading Bot
+# Trading Bot CLI
 
-A powerful trading bot for the Solana blockchain that supports both regular and multi-token trading strategies.
-
+A command-line interface for managing trading bots, built with Node.js, TypeScript, and Prisma. This CLI allows you to create, view, and manage regular and multi-bot configurations, monitor transactions, and interact with a trading bot server.
 
 ## Features
 
-### Regular Bot
-- Single token pair trading
-- Configurable target gain percentage
-- Stop loss protection (Not implemented yet)
-- Real-time price monitoring
-- Automatic trade execution
-- Dashboard with live metrics
-
-### Multi Bot
-- Multiple token pair trading
-- Individual target amounts for each token
-- Configurable gain percentage
-- Real-time price monitoring
-- Automatic trade execution
-- Dashboard with live metrics
+- Create and manage regular trading bot configurations (e.g., SOL/USDC pair)
+- Create and manage multi-bot configurations with multiple target tokens
+- Real-time monitoring of bot status and performance
+- Transaction history tracking
+- Interactive CLI interface with keyboard navigation
+- Support for both Windows and Unix-based systems
 
 ## Prerequisites
 
-- Node.js (v16 or higher)
-- Solana CLI tools
-- A Solana wallet with SOL and tokens for trading
+- Node.js: v20 or higher
+- npm: v10 or higher
+- yarn: v3.8.6
+- A Solana wallet with SOL for transactions
+- Access to a Solana RPC endpoint
 
-## Environment Variables
+## Setup
 
+### 1. Clone the Repository
+```bash
+git clone <repository-url>
+cd solanaswapbot
+```
+
+### 2. Install Dependencies
+```bash
+yarn install
+```
+
+### 3. Configure Environment Variables
 Create a `.env` file in the root directory with the following variables:
 
 ```env
-KEY= Base58 private key
-RPC_URL= URL for RPC eg QuickNodes, Helius have free options
-WSS_URL= WSS URL can be found same place as RPC_URL
+# Solana RPC Configuration
+RPC_URL=<Check Helius or Quicknodes for free RPC>
+WSS_URL=<Check Helius or Quicknodes for free WSS>
+
+# Jupiter API Configuration
 JUP_API=https://public.jupiterapi.com
+
+# Database Configuration
 DATABASE_URL="./dev.db"
+
+# Server Configuration
 PORT=4000
+
+# Wallet Configuration
+KEY=<Private Key Base58>
 ```
 
-## Installation
-
-1. Clone the repository:
+### 4. Set Up the Database
 ```bash
-git clone <repository-url>
-cd <repository-name>
-```
-
-2. Install dependencies:
-```bash
-yarn install
-npx prisma migrate dev
+npm prisma migrate dev
 npx prisma generate
 ```
 
-## Usage
+## Running the Application
 
-### Starting the Bot
-
-1. Start the server:
+### Start the Server
+In a terminal from the root of the project, run:
 ```bash
 yarn dev:windows
 ```
 
-2. The CLI interface will be displayed, allowing you to:
-   - Create new bot configurations
-   - View active bots
-   - Monitor trading metrics
-   - Delete bot configurations
+This will open two windows:
+1. Server window - handles the backend services
+2. CLI window - the interactive trading bot interface
 
-### Regular Bot Configuration
+## Usage
 
-When creating a regular bot, you'll need to provide:
-- Initial input token
-- Initial output token
-- Initial input amount
-- First trade price
-- Target gain percentage (optional)
-- Stop loss percentage (optional)
-- Check interval (optional, default: 20000ms)
+### Main Menu Options
 
-### Multi Bot Configuration
+1. **View All Configs**
+   - List all bot configurations
+   - Edit or delete existing configurations
 
-When creating a multi bot, you'll need to provide:
-- Initial input token
-- Initial input amount
-- Target amounts for each token
-- Target gain percentage
-- Check interval (optional, default: 20000ms)
+2. **Add New Config**
+   - Create a regular bot configuration
+   - Configure input/output tokens
+   - Set target gain and stop loss percentages
 
-## Dashboard
+3. **Add Multi Config**
+   - Create a multi-bot configuration
+   - Set multiple target tokens
+   - Configure target amounts for each token
 
-The dashboard displays real-time metrics for all active bots:
-- Bot ID
-- Status (Running/Stopped)
-- Current price
-- Target price
-- Difference percentage
-- Number of trades
-- Input/Output tokens
+4. **Start All Bots**
+   - Start all configured bots
+   - View progress of bot initialization
 
-## Development
+5. **Stop All Bots**
+   - Stop all running bots
+   - View progress of bot termination
 
-### Project Structure
+6. **View Transactions**
+   - Display transaction history
+   - View trade details and performance
 
-```
-src/
-├── cli/              # CLI interface components
-├── core/             # Core bot logic
-├── services/         # Service layer
-└── utils/            # Utility functions
-```
+### Navigation
 
-### Building
+- Use ↑/↓ arrows to select options
+- Press Enter to confirm
+- Press Escape to go back or exit
+- In forms:
+  - Use arrow keys to navigate fields
+  - Type values and press Enter to confirm
+  - Press Escape to cancel
 
-```bash
-npm run build
-```
+## Bot Configuration
 
-### Testing
+### Regular Bot
+- Input Token: The token you're trading from
+- Output Token: The token you're trading to
+- Initial Input Amount: Amount of input token to start with
+- Target Gain Percentage: Desired profit percentage
+- Stop Loss Percentage: (Optional) Maximum loss percentage (WIP Do not use this yet)
+- First Trade Price: (Optional) Initial trade price
 
-```bash
-npm test
-```
+### Multi Bot
+- Input Token: The token you're trading from
+- Initial Input Amount: Amount of input token to start with
+- Target Gain Percentage: Desired profit percentage
+- Stop Loss Percentage: (Optional) Maximum loss percentage (WIP Do not use this yet)
+- Target Amounts: List of target tokens and their desired amounts
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"Another CLI instance is running" Error**
+   - Ensure no other CLI instances are running
+   - Delete `cli.lock` file
+   - Verify you're running `yarn cli` from the correct directory
+
+2. **Database Connection Issues**
+   - Verify DATABASE_URL in .env file
+   - Ensure database migrations are up to date
+   - Check database file permissions
+
+3. **RPC Connection Issues**
+   - Verify RPC_URL and WSS_URL in .env file
+   - Check internet connection
+   - Ensure RPC endpoint is active and responsive
+
+4. **Transaction Failures**
+   - Verify wallet has sufficient SOL for fees
+   - Check token balances
 
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
-## Security
-
-- Never share your private keys
-- Keep your `.env` file secure
-- Regularly update dependencies
-- Monitor bot activity
-
-## Support
-
-For support, please open an issue in the GitHub repository.
-
-## Error Handling
-
-The application uses a custom `TradeBotError` class to standardize error handling. Each error includes:
-- `message`: Human-readable description.
-- `code`: Unique error code (e.g., `QUOTE_FETCH_ERROR`).
-- `details`: Optional context (e.g., API URL, bot ID).
-
-### Common Error Codes
-- `QUOTE_FETCH_ERROR`: Failed to fetch a quote from the Jupiter API.
-- `SWAP_EXECUTION_ERROR`: Error during swap transaction execution.
-- `DB_ERROR`: Database operation failed.
-- `WALLET_ERROR`: Issue with wallet key or public key fetching.
+Please ensure your pull request:
+- Includes clear descriptions
+- Has appropriate tests
+- Follows the existing code style
+- Updates documentation if needed
 
 ## ⚠️ Disclaimer
 
@@ -167,3 +174,7 @@ This software is provided for **educational and personal use only**. It is not i
 - You should never trade with money you cannot afford to lose
 - You should always do your own research before making any investment decisions
 - This software is provided "as is" without warranty of any kind
+
+## License
+
+This project is licensed under the MIT License 
