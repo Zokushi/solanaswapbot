@@ -2,6 +2,8 @@
 
 A command-line interface for managing trading bots, built with Node.js, TypeScript, and Prisma. This CLI allows you to create, view, and manage regular and multi-bot configurations, monitor transactions, and interact with a trading bot server.
 
+![Trading Bot CLI Screenshot](./assets/cli-screenshot.png)
+
 ## Features
 
 - Create and manage regular trading bot configurations (e.g., SOL/USDC pair)
