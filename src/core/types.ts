@@ -82,6 +82,8 @@ export interface BotData {
   outBalance?: number;
   trades?: number;
   ratio?: number;
+  highestPrice?: number;
+  trailingStopLevel?: number;
 }
 
 export interface TokenAccountInfo {
@@ -115,6 +117,7 @@ export interface TradeBotConfig {
   subscriptions?: ReturnType<typeof createSolanaRpcSubscriptions>;
   firstTradePrice: number;
   stopLossPercentage?: number;
+  trailingStopLossPercentage?: number;
   targetGainPercentage: number;
   checkInterval?: number;
   initialInputToken: string;
@@ -213,6 +216,7 @@ export interface ConfigData {
   firstTradePrice?: number;
   targetGainPercentage: number;
   stopLossPercentage?: number;
+  trailingStopLossPercentage?: number;
   checkInterval?: number;
   status?: BotStatus;
 }

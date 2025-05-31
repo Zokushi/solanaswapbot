@@ -24,22 +24,23 @@ model Transaction {
 }
 
 model Config {
-  botId                 String    @id // Changed from BigInt to String for UUID
+  botId                 String    @id
   initialInputToken     String
   initialOutputToken    String 
   initialInputAmount    Float   
   firstTradePrice       Float   
   targetGainPercentage  Float
   stopLossPercentage    Int?
+  trailingStopLossPercentage Int?
+  highestPrice Int?
   status               String    @default("stopped")
 }
 
 model MultiConfig {
-  botId                 String            @id // Changed from BigInt to String for UUID
+  botId                 String            @id 
   initialInputToken     String
   initialInputAmount    Float
   targetGainPercentage  Float
-  stopLossPercentage    Int?
   targetAmounts         TargetAmount[] @relation("ConfigTargetAmounts")
   checkInterval         Int?
   status               String    @default("stopped")
@@ -47,9 +48,9 @@ model MultiConfig {
 
 model TargetAmount {
   id                    Int         @id @default(autoincrement())
-  configId              String      // Changed from BigInt to String for UUID
+  configId              String     
   tokenAddress          String
-  tokenName             String      // Added for easier token identification
+  tokenName             String     
   amount                Float
   config                MultiConfig   @relation("ConfigTargetAmounts", fields: [configId], references: [botId], onDelete: Cascade)
 }

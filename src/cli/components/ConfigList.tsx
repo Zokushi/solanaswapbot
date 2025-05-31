@@ -1,7 +1,7 @@
 import React, {  useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { shortenUUID } from '../../utils/helper.js';
-import { ConfigListProps, SortField, SortDirection, FilterType, BotWithType, ConfigListState, BotStatus } from '../../core/types.js';
+import { ConfigListProps, SortField, SortDirection, FilterType, BotWithType } from '../../core/types.js';
 import { getSingleTokenData } from '../../services/tokenDataService.js';
 import { useAppContext } from '../context/AppContext.js';
 import { useApp } from 'ink';
@@ -34,6 +34,7 @@ export type ConfigData = {
     initialInputAmount: number;
     firstTradePrice: number | bigint;
     targetGainPercentage: number;
+    trailingStopLoss?: number;
     stopLossPercentage?: number;
     status: string;
   }>;
@@ -42,8 +43,6 @@ export type ConfigData = {
     initialInputToken: string;
     initialInputAmount: number;
     targetGainPercentage: number;
-    stopLossPercentage?: number;
-    checkInterval?: number;
     status: string;
     targetAmounts: Array<{
       id: string;
@@ -249,22 +248,20 @@ export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
       amount: bot.initialInputAmount,
       targetGainPercentage: bot.targetGainPercentage,
       stopLossPercentage: bot.stopLossPercentage,
-      firstTradePrice: typeof bot.firstTradePrice === 'number'
-        ? BigInt(bot.firstTradePrice)
-        : bot.firstTradePrice,
-        status: bot.status as BotStatus,
+      trailingStopLoss: bot.trailingStopLoss,
+      firstTradePrice: bot.firstTradePrice,
+      status: bot.status as 'running' | 'stopped',
     }));
     const multi = configs.multiBots.map(bot => ({
       ...bot,
       type: 'multi' as const,
       amount: bot.initialInputAmount,
       targetGainPercentage: bot.targetGainPercentage,
-      stopLossPercentage: bot.stopLossPercentage,
       targetAmounts: bot.targetAmounts.map(target => ({
         ...target,
         tokenName: tokenNames.get(target.tokenAddress) || target.tokenAddress
       })),
-      status: bot.status as BotStatus
+      status: bot.status as 'running' | 'stopped'
     }));
     return [...regular, ...multi];
   }, [configs, tokenNames]);
@@ -373,11 +370,11 @@ export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
           'targetGainPercentage',
           'stopLossPercentage',
           'firstTradePrice',
+          'trailingStopLoss',
           'initialInputAmount'
         ] : [
           'initialInputToken',
           'targetGainPercentage',
-          'stopLossPercentage',
           'initialInputAmount',
           'addTarget'
         ];
@@ -549,7 +546,7 @@ export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
         <Text>Status: {bot.status}</Text>
         <Text>Input Token: {inputTokenName}</Text>
         {bot.type === 'regular' && <Text>Output Token: {outputTokenName}</Text>}
-        {bot.type === 'regular' &&   <Text>Initial Input Amount: {initialInputAmount}</Text>}
+        {bot.type === 'regular' && <Text>Initial Input Amount: {initialInputAmount}</Text>}
         {bot.type === 'regular' && <Text>First Trade Price: {firstTradePrice}</Text>}
         <Text>
          Target Gain (%): {bot.targetGainPercentage !== undefined

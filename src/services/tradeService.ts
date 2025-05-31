@@ -1,11 +1,11 @@
 import { QuoteGetRequest, QuoteResponse } from "../core/types.js";
-import { ErrorCodes,TradeBotError } from "../utils/errors.js";
+import { ErrorCodes, TradeBotError } from "../utils/errors.js";
 import { handleError } from "../utils/errorHandler.js";
 import { getAddressFromPublicKey, getTransactionDecoder, signTransaction, assertTransactionIsFullySigned, getSignatureFromTransaction, SolanaRpcSubscriptionsApi, RpcSubscriptions, sendAndConfirmTransactionFactory, Rpc, Address, SolanaRpcApiMainnet, Signature, address } from "@solana/kit";
 import dotenv from "dotenv";
 import { PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from "@solana/spl-token";
-import  { createLogger } from "../utils/logger.js";
+import { createLogger } from "../utils/logger.js";
 import NodeCache from 'node-cache';
 import { replacer } from "../utils/replacer.js";
 
@@ -26,7 +26,7 @@ export class TradeService {
     public postTransactionProcessing: (route: QuoteResponse, signature: string) => Promise<void>,
     public setwaitingForConfirmation: (flag: boolean) => void
   ) {
-   if (!rpc) {
+    if (!rpc) {
       handleError(null, 'RPC client is undefined', ErrorCodes.INVALID_CONFIG.code, { botId });
     }
     if (!subscriptions) {
@@ -99,7 +99,7 @@ export class TradeService {
     }
   }
 
-  async getSwap(quoteResponse: QuoteResponse, userPublicKey: Address, feeAccount?: Address): Promise<any> {
+  async getSwap(quoteResponse: QuoteResponse, userPublicKey: Address, account?: Address): Promise<any> {
     logger.warn(`[TradeService] Initiating swap with quote: ${JSON.stringify(quoteResponse, replacer)}`);
     try {
       const swapResponse = await (
@@ -109,7 +109,7 @@ export class TradeService {
           body: JSON.stringify({
             quoteResponse,
             userPublicKey,
-            feeAccount,
+            feeAccount: account,
             wrapAndUnwrapSol: true,
             dynamicComputeUnitLimit: true,
             dynamicSlippage: true,
@@ -174,7 +174,7 @@ export class TradeService {
         throw new TradeBotError(
           `HTTP error fetching quote: ${response.status} ${response.statusText} - ${errorText}`,
           ErrorCodes.QUOTE_FETCH_ERROR.code,
-          { 
+          {
             status: response.status,
             statusText: response.statusText,
             url: url.toString(),
@@ -200,28 +200,73 @@ export class TradeService {
     }
   }
 
-  public async evaluateQuoteAndSwap(quote: QuoteResponse, thresholdPrice: number, forceSwap: boolean = false): Promise<boolean> {
+  public async evaluateQuoteAndSwap(
+    quote: QuoteResponse, 
+    thresholdPrice: number, 
+    stopLossPercentage?: number,
+    trailingStopLossPercentage?: number,
+    highestPrice?: number,
+  ): Promise<{ swapped?: boolean; terminate?: boolean }> {
     if (!quote || !quote.outAmount) {
       throw new TradeBotError('Invalid quote response: Missing outAmount', ErrorCodes.QUOTE_FETCH_ERROR.code, { response: quote });
     }
 
     const currentPrice = parseInt(quote.outAmount);
+    const priceDiff = ((currentPrice - thresholdPrice) / thresholdPrice) * 100;
 
-    if (forceSwap || currentPrice >= thresholdPrice) {
+    // Check regular stop loss
+    if (stopLossPercentage) {
+    if (priceDiff < -stopLossPercentage) {
+      logger.info(`[TradeService] Stop loss triggered at ${currentPrice} (${priceDiff}% below threshold)`);
       try {
         this.setwaitingForConfirmation(true);
-        await this.executeSwap(quote);
-        return true;
+        const stopLoss = await this.executeSwap(quote);
+        if (stopLoss) {
+          return {swapped: true, terminate: true}
+        }
+      } catch (err) {
+        handleError(err, 'Failed to execute stop loss swap', ErrorCodes.SWAP_EXECUTION_ERROR.code, { quote });
+      }
+    }
+  }
+    // Check trailing stop loss
+    if (trailingStopLossPercentage && highestPrice) {
+      const trailingStopLevel = highestPrice * (1 - trailingStopLossPercentage / 100);
+      if (currentPrice < trailingStopLevel) {
+        logger.info(`[TradeService] Trailing stop loss triggered at ${currentPrice} (below trailing stop level ${trailingStopLevel})`);
+        try {
+          this.setwaitingForConfirmation(true);
+          const trailingLoss = await this.executeSwap(quote);
+          if (trailingLoss) {
+            return {swapped: true, terminate: true}
+          }
+        } catch (err) {
+          handleError(err, 'Failed to execute trailing stop loss swap', ErrorCodes.SWAP_EXECUTION_ERROR.code, { quote });
+        }
+      }
+    }
+
+    // Check target gain
+    if (currentPrice >= thresholdPrice) {
+      try {
+        logger.info(`[TradeService] Target gain triggered. Setting Confirmation to True)`);
+        this.setwaitingForConfirmation(true);
+        logger.info(`[TradeService] Executing swap...`);
+        const profit = await this.executeSwap(quote);
+        logger.info(`[TradeService] Swap executed. Result: ${profit}`);
+        if(profit) {
+          return {swapped: true, terminate: false}
+        }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to execute swap';
         logger.error(`[TradeService] ${errorMsg}`);
-        return false;
+        return {swapped: false, terminate: false}
       }
     }
-    return false;
+    return {swapped: false, terminate: false}
   }
 
-  private async executeSwap(route: QuoteResponse): Promise<void> {
+  public async executeSwap(route: QuoteResponse): Promise<boolean> {
     const abortController = new AbortController();
     try {
       logger.warn(`📡 [TradeService] Starting swap execution...`);
@@ -231,9 +276,9 @@ export class TradeService {
         throw new TradeBotError('Error fetching public key', ErrorCodes.WALLET_ERROR.code);
       }
 
-      const feeAccount = await this.ata(route);
+      const account = await this.ata(route);
 
-      const tx = await this.getSwap(route, pubKey, feeAccount as Address);
+      const tx = await this.getSwap(route, pubKey, account as Address);
       const swapTransactionBuf = Buffer.from(tx.swapTransaction, "base64");
       if (!Buffer.isBuffer(swapTransactionBuf)) throw new Error("Invalid transaction buffer");
 
@@ -269,6 +314,7 @@ export class TradeService {
       logger.warn(`✅ [TradeService] Post-transaction processing completed`);
 
       this.setwaitingForConfirmation(false);
+      return true;
     } catch (err) {
       const error = err instanceof TradeBotError ? err : new TradeBotError(
         err instanceof Error && err.name === "AbortError"

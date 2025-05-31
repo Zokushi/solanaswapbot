@@ -21,6 +21,9 @@ export class TradeBot {
   public firstTradePrice: number;
   public targetGainPercentage: number | undefined;
   public stopLossPercentage: number | undefined;
+  public trailingStopLossPercentage: number | undefined;
+  public highestPrice: number;
+  public trailingStopLevel: number | undefined;
   public nextTrade: NextTrade;
   public tradeCounter: number;
 
@@ -60,6 +63,11 @@ export class TradeBot {
     this.firstTradePrice = config.firstTradePrice;
     this.tradeCounter = 0;
     this.stopLossPercentage = config.stopLossPercentage;
+    this.trailingStopLossPercentage = config.trailingStopLossPercentage;
+    this.highestPrice = config.firstTradePrice;
+    this.trailingStopLevel = this.trailingStopLossPercentage ? 
+      this.highestPrice * (1 - this.trailingStopLossPercentage / 100) : 
+      undefined;
     this.stopped = false;
     this.checkInterval = config.checkInterval || 20000;
     this.lastCheck = 0;
@@ -135,7 +143,16 @@ export class TradeBot {
         if (quote) {
           await this.updateUI(quote);
           logger.debug(`Bot ID: ${this.botId} - Evaluating quote`);
-          await this.tradeService.evaluateQuoteAndSwap(quote, this.firstTradePrice);
+          const {terminate} = await this.tradeService.evaluateQuoteAndSwap(
+            quote,
+            this.firstTradePrice,
+            this.stopLossPercentage ?? undefined,
+            this.trailingStopLossPercentage ?? undefined,
+            this.highestPrice ?? undefined
+          );
+          if (terminate) {
+            this.terminateSession();
+          }
         }
       } catch (error) {
         const errorMsg = `Bot ID: ${this.botId} - Error in price watch: ${error instanceof Error ? error.message : String(error)}`;
@@ -176,10 +193,13 @@ export class TradeBot {
     this.difference = diff;
     this.currentTrade = currentPriceWithDecimals;
 
-    if (this.stopLossPercentage && diff < -this.stopLossPercentage) {
-      this.notificationService.log(`Bot ID: ${this.botId} - Stop loss triggered at ${currentPriceWithDecimals}. Terminating.`, this.botId);
-      this.terminateSession();
-      return;
+    // Update highest price and trailing stop level if price is higher
+    if (currentPriceWithDecimals > this.highestPrice) {
+      this.highestPrice = currentPriceWithDecimals;
+      if (this.trailingStopLossPercentage) {
+        this.trailingStopLevel = this.highestPrice * (1 - this.trailingStopLossPercentage / 100);
+        logger.info(`Bot ID: ${this.botId} - Updated trailing stop level to ${this.trailingStopLevel}`);
+      }
     }
 
     const inputName = await getTokenName(this.nextTrade.inputMint);
@@ -193,8 +213,8 @@ export class TradeBot {
       targetTrade: currentThresholdPrice,
       difference: this.difference,
       trades: this.tradeCounter,
-      tokenInPrice: 0,
-      tokenOutPrice: 0
+      highestPrice: this.highestPrice,
+      trailingStopLevel: this.trailingStopLevel
     };
 
     // Emit the bot data to update the dashboard

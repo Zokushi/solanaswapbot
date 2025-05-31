@@ -21,11 +21,15 @@ export class RegularConfigService {
     firstTradePrice: number;
     targetGainPercentage: number;
     stopLossPercentage?: number;
+    trailingStopLossPercentage?: number;
   }): Promise<Config> {
     const configData = {
       ...data,
       stopLossPercentage: data.stopLossPercentage ? 
         Number(BigIntUtils.fromPercentage(data.stopLossPercentage)) : 
+        null,
+      trailingStopLossPercentage: data.trailingStopLossPercentage ?
+        Number(BigIntUtils.fromPercentage(data.trailingStopLossPercentage)) :
         null
     };
     return this.repository.create(configData);
@@ -34,6 +38,9 @@ export class RegularConfigService {
   async updateConfig(botId: string, data: Partial<Config>): Promise<Config> {
     if (data.stopLossPercentage) {
       data.stopLossPercentage = Number(BigIntUtils.fromPercentage(data.stopLossPercentage));
+    }
+    if (data.trailingStopLossPercentage) {
+      data.trailingStopLossPercentage = Number(BigIntUtils.fromPercentage(data.trailingStopLossPercentage));
     }
     return this.repository.update(botId, data);
   }

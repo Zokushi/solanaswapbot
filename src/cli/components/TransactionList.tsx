@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { Transaction } from '@prisma/client';
-import { shortenUUID } from '../../utils/helper.js';
+import { getTokenName, shortenUUID } from '../../utils/helper.js';
 import { useAppContext } from '../context/AppContext.js';
 import { Socket } from 'socket.io-client';
 import { createLogger } from '../../utils/logger.js';
@@ -21,6 +21,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ height = 20, onBack }
   const [transactions, setTransactions] = React.useState<Transaction[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [tokenNames, setTokenNames] = React.useState<Map<string, string>>(new Map());
 
   React.useEffect(() => {
     setLoading(true);
@@ -28,6 +29,10 @@ const TransactionList: React.FC<TransactionListProps> = ({ height = 20, onBack }
     // Handler for transaction:get event
     const handleTransactionGet = (data: { transactions: Transaction[] }) => {
       if (data.transactions) {
+        logger.debug('Received transactions:', { 
+          firstTransaction: data.transactions[0],
+          date: data.transactions[0]?.date
+        });
         setTransactions(data.transactions);
         setError(null);
       } else {
@@ -57,6 +62,27 @@ const TransactionList: React.FC<TransactionListProps> = ({ height = 20, onBack }
       socket.off('transactionUpdate', handleTransactionUpdate);
     };
   }, [socket]);
+
+  // Fetch token names when transactions change
+  React.useEffect(() => {
+    const fetchTokenNames = async () => {
+      const newTokenNames = new Map<string, string>();
+      for (const tx of transactions) {
+        if (!tokenNames.has(tx.tokenIn)) {
+          const name = await getTokenName(tx.tokenIn);
+          newTokenNames.set(tx.tokenIn, name);
+        }
+        if (!tokenNames.has(tx.tokenOut)) {
+          const name = await getTokenName(tx.tokenOut);
+          newTokenNames.set(tx.tokenOut, name);
+        }
+      }
+      if (newTokenNames.size > 0) {
+        setTokenNames(prev => new Map([...prev, ...newTokenNames]));
+      }
+    };
+    fetchTokenNames();
+  }, [transactions, tokenNames]);
 
   useInput((input, key) => {
     if (key.escape) {
@@ -95,19 +121,37 @@ const TransactionList: React.FC<TransactionListProps> = ({ height = 20, onBack }
             <Box key={tx.id}>
               <Box width={8}><Text>{shortenUUID(tx.botId)}</Text></Box>
               <Box width={16}>
-                <Text>{new Date(tx.date).toLocaleString('en-US', { 
-                  month: 'numeric',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: true
-                })}</Text>
+                <Text>
+                  {(() => {
+                    try {
+                      if (!tx.date) return 'N/A';
+                      // Handle Prisma DateTime object
+                      const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
+                      if (isNaN(date.getTime())) {
+                        logger.error('Invalid date:', { date: tx.date });
+                        return 'N/A';
+                      }
+                      return date.toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: 'numeric',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true,
+                        timeZone: 'UTC'
+                      });
+                    } catch (error) {
+                      logger.error('Error formatting date:', { date: tx.date, error });
+                      return 'N/A';
+                    }
+                  })()}
+                </Text>
               </Box>
               <Box width={25}>
-                <Text>{`${tx.tokenInAmount.toFixed(2)} ${shortenUUID(tx.tokenIn)}`}</Text>
+                <Text>{`${tx.tokenInAmount.toFixed(2)} ${tokenNames.get(tx.tokenIn) || tx.tokenIn}`}</Text>
               </Box>
               <Box width={25}>
-                <Text>{`${tx.tokenOutAmount.toFixed(2)} ${shortenUUID(tx.tokenOut)}`}</Text>
+                <Text>{`${tx.tokenOutAmount.toFixed(2)} ${tokenNames.get(tx.tokenOut) || tx.tokenOut}`}</Text>
               </Box>
               <Box width={10}>
                 <Text>{`$${tx.totalValueUSD.toFixed(2)}`}</Text>
