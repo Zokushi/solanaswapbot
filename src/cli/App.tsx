@@ -1,12 +1,10 @@
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
-import { DefaultBotManager } from '../core/botManager.js';
-import { CLISocket } from './services/CLISocket.js';
 import { useBotManagement } from './hooks/useBotManagement.js';
 import RegularBotForm from './forms/RegularBotForm.js';
 import { MultiBotForm } from './forms/MultiBotForm.js';
 import ConfigList from './components/ConfigList.js';
-import { AppProvider } from './context/AppContext.js';
+import { AppProvider, useAppContext } from './context/AppContext.js';
 import { EnvVarInput } from './components/EnvVarInput.js';
 import TransactionList from './components/TransactionList.js';
 import { MainMenu } from './components/MainMenu.js';
@@ -14,6 +12,7 @@ import Dashboard from './components/Dashboard.js';
 import { createLogger } from '../utils/logger.js';
 import { handleError } from '../utils/errorHandler.js';
 import { ErrorCodes } from '../utils/errors.js';
+import { DefaultBotManager } from '../core/botManager.js';
 
 const logger = createLogger('CLIApp');
 const CHECK_BOTS_INTERVAL = 30000; // 30 seconds
@@ -39,21 +38,18 @@ const App = () => {
   const [showTransactionList, setShowTransactionList] = React.useState(false);
   const [isConnected, setIsConnected] = React.useState(false);
 
-  const botManager = React.useMemo(() => new DefaultBotManager(), []);
-  const socket = React.useMemo(() => new CLISocket(botManager), [botManager]);
-  const eventBus = socket.getEventBus();
-
-
+  const { cliSocket, botManager } = useAppContext();
+  const eventBus = cliSocket.getEventBus();
 
   // Monitor socket connection
   React.useEffect(() => {
     const handleConnect = () => {
-      logger.info('Socket connected to server', { method: 'socketConnect', socketId: socket.getSocket().id });
+      logger.info('Socket connected to server', { method: 'socketConnect', socketId: cliSocket.getSocket().id });
       setIsConnected(true);
     };
 
     const handleDisconnect = () => {
-      logger.info('Socket disconnected from server', { method: 'socketDisconnect', socketId: socket.getSocket().id });
+      logger.info('Socket disconnected from server', { method: 'socketDisconnect', socketId: cliSocket.getSocket().id });
       setIsConnected(false);
     };
 
@@ -62,20 +58,20 @@ const App = () => {
       setIsConnected(false);
     };
 
-    socket.getSocket().on('connect', handleConnect);
-    socket.getSocket().on('disconnect', handleDisconnect);
-    socket.getSocket().on('connect_error', handleConnectError);
+    cliSocket.getSocket().on('connect', handleConnect);
+    cliSocket.getSocket().on('disconnect', handleDisconnect);
+    cliSocket.getSocket().on('connect_error', handleConnectError);
 
-    if (!socket.getSocket().connected) {
-      socket.getSocket().connect();
+    if (!cliSocket.getSocket().connected) {
+      cliSocket.getSocket().connect();
     }
 
     return () => {
-      socket.getSocket().off('connect', handleConnect);
-      socket.getSocket().off('disconnect', handleDisconnect);
-      socket.getSocket().off('connect_error', handleConnectError);
+      cliSocket.getSocket().off('connect', handleConnect);
+      cliSocket.getSocket().off('disconnect', handleDisconnect);
+      cliSocket.getSocket().off('connect_error', handleConnectError);
     };
-  }, [socket]);
+  }, [cliSocket]);
 
   const {
     stoppingProgress,
@@ -84,7 +80,7 @@ const App = () => {
     handleStopAllBots,
     handleStartAllBots,
     setStartingProgress,
-  } = useBotManagement(botManager, socket);
+  } = useBotManagement(botManager as DefaultBotManager, cliSocket);
 
   React.useEffect(() => {
     if (envVarsComplete && isConnected) {
@@ -127,14 +123,14 @@ const App = () => {
       for (const botId of botIds) {
         await botManager.stopBot(botId);
       }
-      if (socket) {
-        socket.disconnect();
+      if (cliSocket) {
+        cliSocket.disconnect();
       }
       exit();
     } catch (error) {
       handleError(error, 'Error during CLI cleanup', ErrorCodes.API_ERROR.code, { method: 'cleanup' });
     }
-  }, [botManager, socket, exit]);
+  }, [botManager, cliSocket, exit]);
 
   React.useEffect(() => {
     const handleSignal = async () => {
@@ -214,154 +210,144 @@ const App = () => {
   if (showForm) {
     if (formType === 'regular') {
       return (
-        <AppProvider>
-          <RegularBotForm
-            onComplete={() => {
-              setShowForm(false);
-              setEditingConfig(null);
-            }}
-            editingConfig={editingConfig}
-          />
-        </AppProvider>
+        <RegularBotForm
+          onComplete={() => {
+            setShowForm(false);
+            setEditingConfig(null);
+          }}
+          editingConfig={editingConfig}
+        />
       );
     } else if (formType === 'multi') {
       return (
-        <AppProvider>
-          <MultiBotForm
-            onComplete={() => {
-              setShowForm(false);
-              setEditingConfig(null);
-            }}
-            editingConfig={editingConfig}
-          />
-        </AppProvider>
+        <MultiBotForm
+          onComplete={() => {
+            setShowForm(false);
+            setEditingConfig(null);
+          }}
+          editingConfig={editingConfig}
+        />
       );
     }
   }
 
   if (showTransactionList) {
     return (
-      <AppProvider>
-        <TransactionList
-          onBack={() => {
-            setShowTransactionList(false);
-            setSelectedOption(0);
-          }}
-          height={20}
-          socket={socket.getSocket()}
-        />
-      </AppProvider>
+      <TransactionList
+        onBack={() => {
+          setShowTransactionList(false);
+          setSelectedOption(0);
+        }}
+      />
     );
   }
 
   if (showConfigList) {
     return (
-      <AppProvider>
-        <ConfigList
-          onBack={() => {
-            setShowConfigList(false);
-            setSelectedOption(0);
-          }}
-          botManager={botManager}
-          socket={socket.getSocket()}
-        />
-      </AppProvider>
+      <ConfigList
+        onBack={() => {
+          setShowConfigList(false);
+          setSelectedOption(0);
+        }}
+      />
     );
   }
 
   return (
-    <AppProvider>
-      <Box flexDirection="column">
-        <Text backgroundColor="black" color="cyan">
-          {TRADE_BOT_ASCII}
-        </Text>
-        <Text bold color="white">
-          Welcome to Trading Bot CLI
-        </Text>
+    <Box flexDirection="column">
+      <Text backgroundColor="black" color="cyan">
+        {TRADE_BOT_ASCII}
+      </Text>
+      <Text bold color="white">
+        Welcome to Trading Bot CLI
+      </Text>
 
-        <Box marginTop={1}>
-          <Dashboard socket={socket.getSocket()} height={12} onRefresh={() => checkActiveBots()} />
-        </Box>
+      <Box marginTop={1}>
+        <Dashboard socket={cliSocket.getSocket()} height={12} onRefresh={() => checkActiveBots()} />
+      </Box>
 
-        <MainMenu selectedOption={selectedOption} options={options} />
+      <MainMenu selectedOption={selectedOption} options={options} />
 
-        {showConfirmStartAll && (
-          <Box marginTop={2} flexDirection="column">
-            <Text bold color="green">
-              Confirm Start All Bots
-            </Text>
-            <Box marginTop={1}>
-              <Text color="yellow">Are you sure you want to start all bots?</Text>
-            </Box>
-            <Box marginTop={1}>
-              <Text color="cyan">Active bots: {startingProgress.total}</Text>
-            </Box>
-            {startingProgress.status !== 'idle' && (
-              <Box marginTop={1} flexDirection="column">
-                {startingProgress.status === 'starting' && (
-                  <Box>
-                    <Text color="yellow">
-                      Progress: {startingProgress.current}/{startingProgress.total}
-                    </Text>
-                  </Box>
-                )}
-                <Text
-                  color={
-                    startingProgress.status === 'success'
-                      ? 'green'
-                      : startingProgress.status === 'error'
-                      ? 'red'
-                      : 'white'
-                  }
-                >
-                  {startingProgress.message}
-                </Text>
-              </Box>
-            )}
-            <Box marginTop={1}>
-              <Text color="blue">
-                {startingProgress.status === 'idle'
-                  ? 'Press Enter to confirm, Escape to cancel'
-                  : startingProgress.status === 'success'
-                  ? 'Press any key to continue'
-                  : 'Press Escape to cancel'}
+      {showConfirmStartAll && (
+        <Box marginTop={2} flexDirection="column">
+          <Text bold color="green">
+            Confirm Start All Bots
+          </Text>
+          <Box marginTop={1}>
+            <Text color="yellow">Are you sure you want to start all bots?</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text color="cyan">Active bots: {startingProgress.total}</Text>
+          </Box>
+          {startingProgress.status !== 'idle' && (
+            <Box marginTop={1} flexDirection="column">
+              {startingProgress.status === 'starting' && (
+                <Box>
+                  <Text color="yellow">
+                    Progress: {startingProgress.current}/{startingProgress.total}
+                  </Text>
+                </Box>
+              )}
+              <Text
+                color={
+                  startingProgress.status === 'success'
+                    ? 'green'
+                    : startingProgress.status === 'error'
+                    ? 'red'
+                    : 'white'
+                }
+              >
+                {startingProgress.message}
               </Text>
             </Box>
+          )}
+          <Box marginTop={1}>
+            <Text color="blue">
+              {startingProgress.status === 'idle'
+                ? 'Press Enter to confirm, Escape to cancel'
+                : startingProgress.status === 'success'
+                ? 'Press any key to continue'
+                : 'Press Escape to cancel'}
+            </Text>
           </Box>
-        )}
+        </Box>
+      )}
 
-        {stoppingProgress.status !== 'idle' && (
-          <Box marginTop={2} flexDirection="column">
-            <Text bold color="red">
-              Stop All Bots Progress
-            </Text>
-            {stoppingProgress.status === 'stopping' && (
-              <Box marginTop={1}>
-                <Text color="yellow">
-                  Progress: {stoppingProgress.current}/{stoppingProgress.total}
-                </Text>
-              </Box>
-            )}
-            <Text
-              color={
-                stoppingProgress.status === 'success'
-                  ? 'green'
-                  : stoppingProgress.status === 'error'
-                  ? 'red'
-                  : 'white'
-              }
-            >
-              {stoppingProgress.message}
-            </Text>
-          </Box>
-        )}
-      </Box>
-    </AppProvider>
+      {stoppingProgress.status !== 'idle' && (
+        <Box marginTop={2} flexDirection="column">
+          <Text bold color="red">
+            Stop All Bots Progress
+          </Text>
+          {stoppingProgress.status === 'stopping' && (
+            <Box marginTop={1}>
+              <Text color="yellow">
+                Progress: {stoppingProgress.current}/{stoppingProgress.total}
+              </Text>
+            </Box>
+          )}
+          <Text
+            color={
+              stoppingProgress.status === 'success'
+                ? 'green'
+                : stoppingProgress.status === 'error'
+                ? 'red'
+                : 'white'
+            }
+          >
+            {stoppingProgress.message}
+          </Text>
+        </Box>
+      )}
+    </Box>
   );
 };
 
 const cli = () => {
-  render(<App />);
+  render(
+    <AppProvider>
+      <App />
+    </AppProvider>
+  );
 };
 
 export default cli;

@@ -23,8 +23,8 @@ interface AppProviderProps {
 }
 
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
-  const botManager = new DefaultBotManager();
-  const cliSocket = new CLISocket(botManager);
+  const botManager = React.useMemo(() => new DefaultBotManager(), []);
+  const cliSocket = React.useMemo(() => new CLISocket(botManager), [botManager]);
 
   return (
     <AppContext.Provider value={{ cliSocket, botManager }}>

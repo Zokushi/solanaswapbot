@@ -76,7 +76,7 @@ export const logger = winston.createLogger({
   transports: [
     new winston.transports.Console({
       format: consoleFormat,
-      silent: true,
+      silent: false,
     }),
     new winston.transports.File({
       filename: path.join(logsDir, 'error.log'),

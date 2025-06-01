@@ -56,6 +56,7 @@ export type ConfigData = {
 export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
   const { cliSocket } = useAppContext();
   const eventBus = cliSocket.getEventBus();
+  const socket = cliSocket.getSocket();
   const { exit } = useApp();
   const [configs, setConfigs] = React.useState<ConfigData>({ regularBots: [], multiBots: [] });
   const [selectedIndex, setSelectedIndex] = React.useState(0);
@@ -78,18 +79,32 @@ export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
 
   const fetchConfigs = useCallback(() => {
     try {
-      logger.info('Fetching configs...', { method: 'fetchConfigs', isConnected: isSocketConnected });
+      logger.info('Fetching configs...', { 
+        method: 'fetchConfigs', 
+        isConnected: isSocketConnected,
+        socketId: socket.id,
+        socketConnected: socket.connected
+      });
       if (isSocketConnected) {
+        logger.debug('Emitting config:get event', { 
+          method: 'fetchConfigs',
+          socketId: socket.id,
+          socketConnected: socket.connected
+        });
         eventBus.emit('config:get', {});
       } else {
-        logger.warn('Socket not connected, will retry when connected', { method: 'fetchConfigs' });
+        logger.warn('Socket not connected, will retry when connected', { 
+          method: 'fetchConfigs',
+          socketId: socket.id,
+          socketConnected: socket.connected
+        });
       }
     } catch (error) {
       logger.error('Error fetching configs:', error);
       setError('Failed to fetch configurations');
       setLoading(false);
     }
-  }, [eventBus, isSocketConnected]);
+  }, [eventBus, isSocketConnected, socket.id, socket.connected]);
 
   React.useEffect(() => {
     logger.info('Setting up config list effect', { method: 'useEffect' });
@@ -99,7 +114,9 @@ export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
         logger.info('Received config update event', { 
           method: 'handleConfigUpdate',
           hasData: !!data,
-          dataType: typeof data
+          dataType: typeof data,
+          isObject: typeof data === 'object',
+          isArray: Array.isArray(data)
         });
 
         // Type guard to check if data is ConfigData
@@ -109,12 +126,15 @@ export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
           'regularBots' in data &&
           'multiBots' in data
         ) {
+          const typedData = data as ConfigData;
           logger.info('Processing valid config data', { 
             method: 'handleConfigUpdate',
-            regularBotsCount: (data as ConfigData).regularBots.length,
-            multiBotsCount: (data as ConfigData).multiBots.length
+            regularBotsCount: typedData.regularBots.length,
+            multiBotsCount: typedData.multiBots.length,
+            regularBots: typedData.regularBots.map(bot => bot.botId),
+            multiBots: typedData.multiBots.map(bot => bot.botId)
           });
-          setConfigs(data as ConfigData);
+          setConfigs(typedData);
           setError(null);
           setLoading(false);
         } else {
@@ -140,7 +160,10 @@ export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
     const handleConnect = () => {
       logger.info('Socket connected, fetching configs', { method: 'handleConnect' });
       setIsSocketConnected(true);
-      fetchConfigs();
+      // Add a small delay to ensure socket is fully ready
+      setTimeout(() => {
+        fetchConfigs();
+      }, 100);
     };
 
     const handleDisconnect = () => {
@@ -155,8 +178,10 @@ export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
     eventBus.on('connect', handleConnect);
     eventBus.on('disconnect', handleDisconnect);
 
-    // Initial fetch if socket is already connected
-    if (isSocketConnected) {
+    // Check if socket is already connected and fetch configs
+    if (socket.connected) {
+      logger.info('Socket already connected, fetching configs', { method: 'useEffect' });
+      setIsSocketConnected(true);
       fetchConfigs();
     }
 
@@ -167,7 +192,7 @@ export const ConfigList: React.FC<ConfigListProps> = ({ onBack }) => {
       eventBus.off('connect', handleConnect);
       eventBus.off('disconnect', handleDisconnect);
     };
-  }, [eventBus, fetchConfigs, isSocketConnected]);
+  }, [eventBus, fetchConfigs, socket.connected]);
 
   // Add a debug effect to log state changes
   React.useEffect(() => {

@@ -120,9 +120,7 @@ export const useBotManagement = (botManager: DefaultBotManager, socket: CLISocke
     }
   }, [botManager, checkActiveBots]);
 
-  const showTransactionList = React.useCallback((botId: string) => {
-    logger.info('Showing transaction list', { method: 'showTransactionList', botId });
-  }, []);
+
 
   const handleStartAllBots = React.useCallback(async () => {
     logger.info('Starting all bots', { method: 'handleStartAllBots' });

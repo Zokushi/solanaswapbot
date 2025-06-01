@@ -3,7 +3,6 @@ import { Box, Text, useApp, useInput } from 'ink';
 import { Transaction } from '@prisma/client';
 import { getTokenName, shortenUUID } from '../../utils/helper.js';
 import { useAppContext } from '../context/AppContext.js';
-import { Socket } from 'socket.io-client';
 import { createLogger } from '../../utils/logger.js';
 
 const logger = createLogger('TransactionList');
@@ -11,13 +10,11 @@ const logger = createLogger('TransactionList');
 interface TransactionListProps {
   height?: number;
   onBack: () => void;
-  socket?: Socket
 }
 
-const TransactionList: React.FC<TransactionListProps> = ({ height = 20, onBack }) => {
+export default function TransactionList({ height = 20, onBack }: TransactionListProps) {
   const { cliSocket } = useAppContext();
   const eventBus = cliSocket.getEventBus();
-  const socket = cliSocket.getSocket();
   const [transactions, setTransactions] = React.useState<Transaction[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -50,18 +47,22 @@ const TransactionList: React.FC<TransactionListProps> = ({ height = 20, onBack }
     };
 
     // Listen for events
-    socket.on('transaction:response', handleTransactionGet);
-    socket.on('transactionUpdate', handleTransactionUpdate);
+    eventBus.on('transaction:response', handleTransactionGet as (data: unknown) => void);
+    eventBus.on('transactionUpdate', handleTransactionUpdate as (data: unknown) => void);
 
     // Request transactions
-    socket.emit('transaction:get', {});
+    logger.debug('Requesting transactions', { 
+      method: 'useEffect',
+      isConnected: cliSocket.getSocket().connected 
+    });
+    eventBus.emit('transaction:get', {});
 
     // Cleanup listeners on unmount
     return () => {
-      socket.off('transaction:response', handleTransactionGet);
-      socket.off('transactionUpdate', handleTransactionUpdate);
+      eventBus.off('transaction:response', handleTransactionGet as (data: unknown) => void);
+      eventBus.off('transactionUpdate', handleTransactionUpdate as (data: unknown) => void);
     };
-  }, [socket]);
+  }, [eventBus]);
 
   // Fetch token names when transactions change
   React.useEffect(() => {
@@ -74,7 +75,6 @@ const TransactionList: React.FC<TransactionListProps> = ({ height = 20, onBack }
         }
         if (!tokenNames.has(tx.tokenOut)) {
           const name = await getTokenName(tx.tokenOut);
-          newTokenNames.set(tx.tokenOut, name);
         }
       }
       if (newTokenNames.size > 0) {
@@ -169,5 +169,3 @@ const TransactionList: React.FC<TransactionListProps> = ({ height = 20, onBack }
     </Box>
   );
 };
-
-export default TransactionList;

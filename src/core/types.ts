@@ -78,8 +78,6 @@ export interface BotData {
   tokenOutPrice?: number;
   currentPrice: number;
   targetGainPercentage?: number;
-  inBalance?: number;
-  outBalance?: number;
   trades?: number;
   ratio?: number;
   highestPrice?: number;
@@ -103,11 +101,6 @@ export interface LogSwapArgs {
   totalValueUSD: number;
   txid: string;
   date: Date;
-}
-
-export interface EmailArgs {
-  subject: string;
-  text: string;
 }
 
 export interface TradeBotConfig {
@@ -225,9 +218,6 @@ export interface MultiConfigData extends ConfigData {
   targetAmounts: Array<{ tokenAddress: string; amount: number }>;
 }
 
-interface QuicknodeRpcConfig {
-  wssEndpoint: string;
-}
 
 interface CreateAddonsApiParams {
   endpoint: string;
@@ -238,7 +228,6 @@ interface CreateAddonsApiParams {
 export type {
   QuoteGetRequest,
   QuoteResponse,
-  QuicknodeRpcConfig,
   CreateAddonsApiParams,
   LogEntry,
 };
@@ -374,10 +363,7 @@ export interface Repository<T> {
   findAll(): Promise<T[]>;
 }
 export interface ConfigListProps {
-  socket: Socket;
-  botManager: BotManager;
   onBack: () => void;
-  onEdit?: (type: 'regular' | 'multi', config: any) => void;
 }
 
 export interface RegularBotFormProps {

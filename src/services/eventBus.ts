@@ -15,6 +15,12 @@ export class EventBus {
   private setupEventListeners() {
     this.socket.on('connect', () => {
       this.logger.info('Socket connected', { method: 'socketConnect', socketId: this.socket.id });
+      // Process queued events when socket reconnects
+      while (this.eventQueue.length > 0) {
+        const { event, data } = this.eventQueue.shift()!;
+        this.logger.debug('Processing queued event', { method: 'connect', event });
+        this.socket.emit(event, data);
+      }
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -59,7 +65,10 @@ export class EventBus {
   }
 
   on(event: string, callback: (data: unknown) => void) {
-    this.socket.on(event, callback);
+    this.socket.on(event, (data: unknown) => {
+      this.logger.debug('Received event', { method: 'on', event, hasData: !!data });
+      callback(data);
+    });
     this.logger.debug('Registered listener', { method: 'on', event });
   }
 

@@ -1,17 +1,17 @@
 // __tests__/cli/components/ConfigList.test.tsx
-import React from 'react';
 import { render } from 'ink-testing-library';
-import { ConfigList } from '../../cli/components/ConfigList';
+import { ConfigList } from '../../../cli/components/ConfigList.js';
 import { jest } from '@jest/globals';
-import { useAppContext } from '../../cli/context/AppContext';
-import { ConfigData, BotWithType } from '../../core/types';
-import { getSingleTokenData } from '../../services/tokenDataService';
-import logger from '../../utils/logger';
+import { useAppContext } from '../../../cli/context/AppContext.js';
+import { BotWithType } from '../../../core/types.js';
+import { getSingleTokenData } from '../../../services/tokenDataService.js';
 
 // Mock dependencies
-jest.mock('../../cli/context/AppContext');
-jest.mock('../../services/tokenDataService');
-jest.mock('../../utils/logger');
+jest.mock('../../cli/context/AppContext.js');
+jest.mock('../../services/tokenDataService.js');
+jest.mock('../../utils/logger.js');
+jest.mock('../../services/configService.js');
+jest.mock('../../cli/hooks/useBotManager.js');
 
 describe('ConfigList', () => {
   const mockBot: BotWithType = {
@@ -20,14 +20,15 @@ describe('ConfigList', () => {
     initialInputToken: 'SOL',
     initialOutputToken: 'USDC',
     initialInputAmount: 1000,
-    targetGainPercentage: BigInt(5),
-    stopLossPercentage: BigInt(2),
+    targetGainPercentage: 5,
+    stopLossPercentage: 2,
     firstTradePrice: BigInt(1000),
     status: 'running',
     amount: 1000,
   };
 
-  const mockConfigs: ConfigData = {
+  // Use the correct type for mockConfigs to match the expected state shape in the component
+  const mockConfigs = {
     regularBots: [mockBot],
     multiBots: [],
   };
@@ -89,7 +90,7 @@ describe('ConfigList', () => {
     });
 
     const mockOnBack = jest.fn();
-    const { stdin } = render(<ConfigList onBack={mockOnBack} />);
+    const { stdin } = render(<ConfigList socket={mockEventBus} botManager={mockBotManager} />);
     stdin.write('\r'); // Select bot
     stdin.write('\u001b[A'); // Up arrow to select 'delete'
     stdin.write('\r'); // Confirm delete
