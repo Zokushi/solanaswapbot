@@ -116,15 +116,15 @@ This will open two windows:
 - Input Token: The token you're trading from
 - Output Token: The token you're trading to
 - Initial Input Amount: Amount of input token to start with
-- Target Gain Percentage: Desired profit percentage
-- Stop Loss Percentage: (Optional) Maximum loss percentage (WIP Do not use this yet)
-- First Trade Price: (Optional) Initial trade price
+- First Trade Price: Amount of output token you want to receive 
+- Target Gain Percentage (Optional): Desired profit percentage, if not set bot will terminate after confirming the first trade.
+- Stop Loss Percentage (Optional): Percent loss before stopping the trade
+- Trailing Stop Loss Percentage (Optional): Add a trailing stop loss to the trade
 
 ### Multi Bot
 - Input Token: The token you're trading from
 - Initial Input Amount: Amount of input token to start with
 - Target Gain Percentage: Desired profit percentage
-- Stop Loss Percentage: (Optional) Maximum loss percentage (WIP Do not use this yet)
 - Target Amounts: List of target tokens and their desired amounts
 
 ## Troubleshooting
