@@ -221,7 +221,6 @@ export interface MultiConfigData extends ConfigData {
 
 interface CreateAddonsApiParams {
   endpoint: string;
-  jupiterApi?: string;
 }
 
 

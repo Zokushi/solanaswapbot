@@ -42,9 +42,6 @@ Create a `.env` file in the root directory with the following variables:
 RPC_URL=<Check Helius or Quicknodes for free RPC>
 WSS_URL=<Check Helius or Quicknodes for free WSS>
 
-# Jupiter API Configuration
-JUP_API=https://public.jupiterapi.com
-
 # Database Configuration
 DATABASE_URL="./dev.db"
 

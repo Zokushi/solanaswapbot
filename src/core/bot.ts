@@ -6,7 +6,6 @@ import { TradeService } from "../services/tradeService.js";
 import { NotificationService } from "../services/notificationService.js";
 import { ConfigService } from "../services/configService.js";
 import { createLogger } from "../utils/logger.js";
-import { handleError } from "../utils/errorHandler.js";
 const logger = createLogger('TradeBot');
 
 export class TradeBot {
